@@ -1,16 +1,50 @@
+# Audio Toolkit Shell Configuration
+# This file configures the application window and terminal tabs
+
 [app]
-name = "Audio Toolkit Shell"
-window_width = 1280
-window_height = 720
+# Application window settings
+name = "Audio Toolkit Shell"          # Window title
+window_width = 1280                   # Initial window width in pixels
+window_height = 720                   # Initial window height in pixels
+
+# Terminal tab configurations
+# Each [[tabs]] section defines one terminal tab
 
 [[tabs]]
-title = "Start Scripts"
-command = "/Users/caioraphael/Desktop/BOUNCET4/PYTHON_SCRIPTS/start_scripts_rust"
-auto_restart_on_success = false
-success_patterns = ["Completed successfully", "created successfully", "SCRIPT MENU"]
+title = "Start Scripts"                                                    # Tab display name
+command = "/Users/caioraphael/Desktop/BOUNCET4/PYTHON_SCRIPTS/start_scripts_rust"  # Executable to run
+auto_restart_on_success = false                                            # Auto-restart when success patterns detected
+success_patterns = ["Completed successfully", "SCRIPT MENU"]               # Text patterns that trigger restart
 
 [[tabs]]
-title = "Terminal 2"
-command = "bash"
-auto_restart_on_success = false
-success_patterns = []
+title = "Terminal 2"                   # Standard bash terminal
+command = "bash"                       # Run bash shell
+auto_restart_on_success = false        # No auto-restart for interactive shell
+success_patterns = []                   # No success patterns for bash
+
+# Example additional tabs (uncomment and modify as needed):
+#
+# [[tabs]]
+# title = "Audio Normalizer"
+# command = "/path/to/audio_normalizer"
+# auto_restart_on_success = true
+# success_patterns = ["Normalization complete", "Ready"]
+#
+# [[tabs]]
+# title = "Session Monitor"
+# command = "/path/to/session_monitor"
+# auto_restart_on_success = false
+# success_patterns = []
+#
+# [[tabs]]
+# title = "System Monitor"
+# command = "htop"
+# auto_restart_on_success = false
+# success_patterns = []
+
+# Configuration Notes:
+# - Use absolute paths for custom executables
+# - Auto-restart is useful for menu-driven tools
+# - Success patterns are case-sensitive substrings
+# - Empty success_patterns array disables pattern detection
+# - Test executables manually before adding to config
