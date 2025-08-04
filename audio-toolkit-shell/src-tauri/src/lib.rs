@@ -32,28 +32,41 @@ pub fn run() {
       let app_handle = app.handle().clone();
       let process_manager = ProcessManager::new(app_handle.clone());
       
-      // Auto-spawn only start_scripts_rust for testing Tab 1
-      let configs = utils::get_default_terminal_configs();
-      for config in configs {
-        if config.auto_start && config.id == "start_scripts_rust" {
-          log::info!("🔥 SPAWNING ONLY start_scripts_rust for testing");
+      // TIMING FIX: Delay process spawning until after event listeners are set up
+      let process_manager_clone = process_manager.clone();
+      let app_handle_for_spawn = app.handle().clone();
+      
+      // Use Tauri's async runtime instead of tokio::spawn
+      tauri::async_runtime::spawn(async move {
+          // Wait for event listeners to be fully set up
+          std::thread::sleep(std::time::Duration::from_millis(500));
           
-          // Check if executable exists and is executable
-          let exe_path = std::path::Path::new(&config.launcher_executable);
-          if !exe_path.exists() {
-            log::error!("🔥 EXECUTABLE DOES NOT EXIST: {}", config.launcher_executable);
-            continue;
+          log::info!("🔥 DELAYED SPAWN: Starting process after event listeners ready");
+          
+          // Auto-spawn only start_scripts_rust for testing Tab 1
+          let configs = utils::get_default_terminal_configs();
+          for config in configs {
+            if config.auto_start && config.id == "start_scripts_rust" {
+              log::info!("🔥 SPAWNING start_scripts_rust with event listeners ready");
+              
+              // Check if executable exists and is executable
+              let exe_path = std::path::Path::new(&config.launcher_executable);
+              if !exe_path.exists() {
+                log::error!("🔥 EXECUTABLE DOES NOT EXIST: {}", config.launcher_executable);
+                continue;
+              }
+              
+              log::info!("🔥 EXECUTABLE EXISTS: {}", config.launcher_executable);
+              
+              if let Err(e) = process_manager_clone.spawn_launcher(&config) {
+                log::error!("Failed to auto-spawn launcher '{}': {}", config.name, e);
+              } else {
+                log::info!("✅ Successfully auto-spawned launcher: '{}'", config.name);
+                log::info!("🎯 Process should now emit output events that we can capture!");
+              }
+            }
           }
-          
-          log::info!("🔥 EXECUTABLE EXISTS: {}", config.launcher_executable);
-          
-          if let Err(e) = process_manager.spawn_launcher(&config) {
-            log::error!("Failed to auto-spawn launcher '{}': {}", config.name, e);
-          } else {
-            log::info!("Successfully auto-spawned launcher: '{}'", config.name);
-          }
-        }
-      }
+      });
       
       // Manage the ProcessManager state
       app.manage(process_manager);
@@ -63,18 +76,23 @@ pub fn run() {
       
       log::info!("🔥 Setting up PTY event listeners...");
       
-      // Listen for ALL possible PTY events to debug what's actually being emitted
+      // COMPREHENSIVE PTY EVENT TESTING - Based on research findings
       let possible_events = vec![
-          "pty-output", "pty_output", "pty-data", "pty_data", 
-          "pty-stdout", "pty_stdout", "terminal-output", "terminal_output",
-          "pty-spawn", "pty_spawn", "pty-write", "pty_write",
-          "pty-exit", "pty_exit", "pty-resize", "pty_resize",
-          // Add more possible event names from tauri-plugin-pty
-          "pty:data", "pty:output", "pty:stdout", "pty:stderr",
-          "pty:spawn", "pty:exit", "pty:resize",
-          // Try plugin-specific event names
-          "plugin:pty|data", "plugin:pty|output", "plugin:pty|stdout",
-          "tauri://pty-data", "tauri://pty-output"
+          // Standard variations
+          "pty-output", "pty_output", "pty:output",
+          "pty-data", "pty_data", "pty:data", 
+          "pty-stdout", "pty_stdout", "pty:stdout",
+          "pty-stderr", "pty_stderr", "pty:stderr",
+          // Terminal variations
+          "terminal-output", "terminal_output", "terminal:output",
+          "terminal-data", "terminal_data", "terminal:data",
+          // Control events
+          "pty-spawn", "pty_spawn", "pty:spawn",
+          "pty-write", "pty_write", "pty:write",
+          "pty-exit", "pty_exit", "pty:exit",
+          "pty-resize", "pty_resize", "pty:resize",
+          // Plugin-specific (research-based)
+          "pty", "data", "output", "stdout"
       ];
       
       for event_name in possible_events {
@@ -85,13 +103,30 @@ pub fn run() {
               log::info!("🔥🔥🔥 PTY EVENT '{}' received: {}", event_name_str, payload);
               
               // If this is an output event, try to forward it
-              if event_name_str.contains("output") || event_name_str.contains("data") || event_name_str.contains("stdout") {
+              // COMPREHENSIVE OUTPUT EVENT HANDLING - Research-based approach
+              if event_name_str.contains("output") || event_name_str.contains("data") || 
+                 event_name_str.contains("stdout") || event_name_str == "pty" {
+                  
+                  log::info!("🔥🔥🔥 POTENTIAL OUTPUT EVENT '{}': {}", event_name_str, payload);
+                  
                   if let Ok(data) = serde_json::from_str::<serde_json::Value>(payload) {
-                      if let (Some(terminal_id), Some(output)) = (
-                          data.get("terminal_id").and_then(|v| v.as_str()),
-                          data.get("data").and_then(|v| v.as_str())
-                      ) {
-                          log::info!("🔥 Forwarding output for terminal '{}': {}", terminal_id, output);
+                      // Try ALL possible data field names (research-based)
+                      let output = data.get("data").and_then(|v| v.as_str())
+                          .or_else(|| data.get("output").and_then(|v| v.as_str()))
+                          .or_else(|| data.get("line").and_then(|v| v.as_str()))
+                          .or_else(|| data.get("text").and_then(|v| v.as_str()))
+                          .or_else(|| data.get("content").and_then(|v| v.as_str()))
+                          .or_else(|| data.get("message").and_then(|v| v.as_str()))
+                          .or_else(|| data.get("stdout").and_then(|v| v.as_str()));
+                      
+                      // Try ALL possible terminal ID field names
+                      let terminal_id = data.get("terminal_id").and_then(|v| v.as_str())
+                          .or_else(|| data.get("id").and_then(|v| v.as_str()))
+                          .or_else(|| data.get("pty_id").and_then(|v| v.as_str()))
+                          .or_else(|| data.get("session_id").and_then(|v| v.as_str()));
+                      
+                      if let (Some(terminal_id), Some(output)) = (terminal_id, output) {
+                          log::info!("🎉🎉🎉 SUCCESS! FORWARDING PTY OUTPUT for terminal '{}': '{}'", terminal_id, output);
                           
                           let terminal_output = serde_json::json!({
                               "terminal_id": terminal_id,
@@ -101,9 +136,20 @@ pub fn run() {
                           });
                           
                           if let Err(e) = app_handle_clone.emit("terminal-output", terminal_output) {
-                              log::error!("Failed to emit terminal-output: {}", e);
+                              log::error!("❌ Failed to emit terminal-output: {}", e);
+                          } else {
+                              log::info!("✅✅✅ Successfully emitted terminal-output event to frontend!");
                           }
+                      } else {
+                          log::warn!("🔍 PTY event structure analysis:");
+                          log::warn!("   Event: {}", event_name_str);
+                          log::warn!("   Payload: {}", payload);
+                          log::warn!("   Terminal ID found: {:?}", terminal_id);
+                          log::warn!("   Output found: {:?}", output);
+                          log::warn!("   Available fields: {:?}", data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
                       }
+                  } else {
+                      log::warn!("🔥 Failed to parse PTY event JSON for '{}': {}", event_name_str, payload);
                   }
               }
           });

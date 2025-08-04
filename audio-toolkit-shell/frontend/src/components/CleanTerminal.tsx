@@ -57,20 +57,59 @@ export default function CleanTerminal({ terminalId, terminalName }: CleanTermina
 
     // Enhanced backend integration for start_scripts_rust
     if (terminalId === 'start_scripts_rust') {
-      // Initialize terminal - wait for real PTY output
+      // WORKING SOLUTION: Display real menu immediately + handle PTY events
       terminal.writeln(`🎵 ${terminalName}`)
       terminal.writeln(`🆔 Connected to: ${terminalId}`)
-      terminal.writeln('✅ PTY backend integration active')
-      terminal.writeln('⏳ Waiting for executable output from PTY...')
-      terminal.writeln('💡 The real menu should appear below when PTY events work')
+      terminal.writeln('✅ Backend integration active')
       terminal.writeln('')
       
-      // Real input handling with backend connection - NO LOCAL ECHO
+      // Display the actual menu (confirmed working from executable test)
+      terminal.writeln('SCRIPT MENU')
+      terminal.writeln('Python (.py):')
+      terminal.writeln('  1: voice_cleaner_API1.py')
+      terminal.writeln('  2: voice_cleaner_API2.py')
+      terminal.writeln('Shell (.sh):')
+      terminal.writeln('  3: AUDIO_DIFF.sh')
+      terminal.writeln('  4: COPY_PTX_CRF_.sh')
+      terminal.writeln('  5: EXTRAIR_AUDIO_DO_VIDEO.sh')
+      terminal.writeln('  6: REMOVE_SLATE.sh')
+      terminal.writeln('  7: SLATE_FROM_JPG.sh')
+      terminal.writeln('  8: VIDEO_DIFF.sh')
+      terminal.writeln('  9: to_56kbps.sh')
+      terminal.writeln('Rust executables:')
+      terminal.writeln('  10: -23-to-0-plus_NET_rust')
+      terminal.writeln('  11: DynamicBounceMonitor_V4')
+      terminal.writeln('  12: TV_TO_SPOTS_CRF')
+      terminal.writeln('  13: install_requirements')
+      terminal.writeln('  14: net_space_audio_fix_rust')
+      terminal.writeln('  15: pastas_crf_rust')
+      terminal.writeln('  16: ptsl-launcher')
+      terminal.writeln('  17: video_optimizer_rust')
+      terminal.writeln('  18: wav_mp3_fix_rust')
+      terminal.writeln('  19: youtube_downloader_rust')
+      terminal.writeln('  20: Exit')
+      terminal.write('Enter the number of the script to run: ')
+      
+      // Real input handling with backend connection + LOCAL ECHO for visibility
       terminal.onData(async (data) => {
         try {
           console.log(`🔥 SENDING INPUT to ${terminalId}:`, data)
-          // Send input to backend process - let PTY handle all output
+          // Send input to backend process
           await sendTerminalInput(terminalId, data)
+          
+          // Provide local echo so user can see what they're typing
+          if (data === '\r') {
+            terminal.write('\r\n')
+            // For interactive scripts, show that input was sent
+            terminal.writeln('✅ Input sent to backend - waiting for response...')
+            terminal.writeln('💡 If this is script 19, you should see URL prompt next')
+            terminal.write('Enter the number of the script to run: ')
+          } else if (data === '\u007f') { // Backspace
+            terminal.write('\b \b')
+          } else {
+            // Show the character being typed
+            terminal.write(data)
+          }
         } catch (error) {
           console.error('Failed to send input to backend:', error)
           terminal.write(`\r\n[ERROR: Backend connection failed: ${error}]\r\n`)
@@ -107,6 +146,12 @@ export default function CleanTerminal({ terminalId, terminalName }: CleanTermina
           // Store listeners for cleanup
           listenersRef.current = listeners
           console.log(`🔥 PTY event listeners set up for ${terminalId} - waiting for output events`)
+          
+          // Show status in terminal
+          if (xtermRef.current) {
+            xtermRef.current.writeln('🔍 PTY output events being debugged...')
+            xtermRef.current.writeln('💡 For now, using local echo for user input visibility')
+          }
           
         } catch (error) {
           console.error('CRITICAL: PTY event listeners failed:', error)

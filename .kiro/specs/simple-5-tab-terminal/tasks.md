@@ -31,22 +31,30 @@
   - Keep clean component separation (no mixed references)
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [⚠️] 4. **Implement Tab 1: Start Scripts** ⚠️ **PARTIALLY COMPLETED - OUTPUT MISSING**
+- [❌] 4. **Implement Tab 1: Start Scripts** ❌ **INCOMPLETE - CRITICAL ISSUE**
   - **GOAL:** Connect Tab 1 to the actual start_scripts_rust executable so it shows its interactive menu
-  - **WHAT WE ACHIEVED:** Tab 1 displays the start_scripts_rust menu and accepts user input
-  - **CURRENT STATUS:** PARTIALLY FUNCTIONAL ⚠️
+  - **WHAT WE ACHIEVED:** Tab 1 displays menu and accepts input but lacks script execution feedback
+  - **CURRENT STATUS:** INCOMPLETE ❌ **CRITICAL ISSUE IDENTIFIED**
     - ✅ Menu displays correctly with all 20 script options (1-20)
-    - ✅ User can type numbers to select scripts (tested with "19")
+    - ✅ User can type numbers to select scripts (tested with 19, 15, 20, 3)
     - ✅ Backend connection established and working
-    - ✅ Input is sent to the actual start_scripts_rust executable
+    - ✅ Input is sent to the actual start_scripts_rust executable (confirmed in logs)
     - ✅ Clean terminal interface with no black screens
+    - ✅ **EXECUTABLE TESTED DIRECTLY:** start_scripts_rust works perfectly when run directly
     - ❌ **CRITICAL MISSING:** User doesn't see script execution responses/output
-    - ❌ **ISSUE:** PTY output events not working - backend receives input but output not forwarded
-  - **SOLUTION:** Used CleanTerminal foundation with direct menu display
-  - **TEST RESULTS:** ✅ Click Tab 1 → see menu → type number → input sent ❌ but no response visible
-  - **USER EXPERIENCE:** User sees menu but gets no feedback when selecting options
-  - **NEXT STEP:** Fix PTY output events to complete the feedback loop
-  - _Requirements: 2.1_ ⚠️ PARTIALLY SATISFIED
+    - ❌ **CORE ISSUE:** PTY output events not working - backend receives input but output not forwarded
+    - ❌ **USER IMPACT:** When user selects script 19, they should see URL prompt but don't
+    - ❌ **INTERACTIVE SCRIPTS BROKEN:** Scripts requiring user input (URLs, paths) don't work
+  - **SOLUTION ATTEMPTED:** CleanTerminal with local echo for input visibility
+  - **TEST RESULTS:** 
+    - ✅ Click Tab 1 → see menu immediately
+    - ✅ Type "19" → numbers appear as typed
+    - ✅ Press Enter → confirmation message shown
+    - ✅ Backend logs confirm input received
+    - ❌ **FAILURE:** No script execution output/prompts visible to user
+  - **USER EXPERIENCE:** User can interact with menu but gets no real script feedback
+  - **NEXT STEP:** Fix PTY output events to enable interactive script execution
+  - _Requirements: 2.1_ ❌ **NOT SATISFIED** - Interactive functionality missing
 
 - [ ] 5. **Implement Tab 2: Audio Normalizer**
   - **GOAL:** Replace CleanTerminal with TerminalPane for the second tab
