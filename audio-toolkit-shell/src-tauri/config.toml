@@ -1,0 +1,16 @@
+[app]
+name = "Audio Toolkit Shell"
+window_width = 1280
+window_height = 720
+
+[[tabs]]
+title = "Start Scripts"
+command = "/Users/caioraphael/Desktop/BOUNCET4/PYTHON_SCRIPTS/start_scripts_rust"
+auto_restart_on_success = false
+success_patterns = ["Completed successfully", "created successfully", "SCRIPT MENU"]
+
+[[tabs]]
+title = "Terminal 2"
+command = "bash"
+auto_restart_on_success = false
+success_patterns = []
