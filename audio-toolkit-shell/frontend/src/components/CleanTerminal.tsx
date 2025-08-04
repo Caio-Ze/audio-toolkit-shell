@@ -54,88 +54,30 @@ export default function CleanTerminal({ terminalId, terminalName }: CleanTermina
     // Store references
     xtermRef.current = terminal
     fitAddonRef.current = fitAddon
-    
-    // Initialize input buffer for local echo
-    ;(terminal as any)._inputBuffer = ''
 
     // Enhanced backend integration for start_scripts_rust
     if (terminalId === 'start_scripts_rust') {
-      // Display the actual start_scripts_rust menu (working approach from docs)
+      // Initialize terminal - wait for real PTY output
       terminal.writeln(`🎵 ${terminalName}`)
       terminal.writeln(`🆔 Connected to: ${terminalId}`)
-      terminal.writeln('✅ Backend integration active')
+      terminal.writeln('✅ PTY backend integration active')
+      terminal.writeln('⏳ Waiting for executable output from PTY...')
+      terminal.writeln('💡 The real menu should appear below when PTY events work')
       terminal.writeln('')
       
-      // Display the actual menu from start_scripts_rust
-      terminal.writeln('SCRIPT MENU')
-      terminal.writeln('Python (.py):')
-      terminal.writeln('  1: voice_cleaner_API1.py')
-      terminal.writeln('  2: voice_cleaner_API2.py')
-      terminal.writeln('Shell (.sh):')
-      terminal.writeln('  3: AUDIO_DIFF.sh')
-      terminal.writeln('  4: COPY_PTX_CRF_.sh')
-      terminal.writeln('  5: EXTRAIR_AUDIO_DO_VIDEO.sh')
-      terminal.writeln('  6: REMOVE_SLATE.sh')
-      terminal.writeln('  7: SLATE_FROM_JPG.sh')
-      terminal.writeln('  8: VIDEO_DIFF.sh')
-      terminal.writeln('  9: to_56kbps.sh')
-      terminal.writeln('Rust executables:')
-      terminal.writeln('  10: -23-to-0-plus_NET_rust')
-      terminal.writeln('  11: DynamicBounceMonitor_V4')
-      terminal.writeln('  12: TV_TO_SPOTS_CRF')
-      terminal.writeln('  13: install_requirements')
-      terminal.writeln('  14: net_space_audio_fix_rust')
-      terminal.writeln('  15: pastas_crf_rust')
-      terminal.writeln('  16: ptsl-launcher')
-      terminal.writeln('  17: video_optimizer_rust')
-      terminal.writeln('  18: wav_mp3_fix_rust')
-      terminal.writeln('  19: youtube_downloader_rust')
-      terminal.writeln('  20: Exit')
-      terminal.write('Enter the number of the script to run: ')
-      
-      // Real input handling with backend connection
+      // Real input handling with backend connection - NO LOCAL ECHO
       terminal.onData(async (data) => {
         try {
           console.log(`🔥 SENDING INPUT to ${terminalId}:`, data)
-          // Send input to backend process
+          // Send input to backend process - let PTY handle all output
           await sendTerminalInput(terminalId, data)
-          
-          // Provide local echo since PTY output events aren't working yet
-          if (data === '\r') {
-            terminal.write('\r\n')
-            // Simulate script execution feedback
-            const inputBuffer = (terminal as any)._inputBuffer || ''
-            if (inputBuffer.match(/^\d+$/)) {
-              const scriptNum = parseInt(inputBuffer)
-              if (scriptNum >= 1 && scriptNum <= 20) {
-                terminal.writeln(`✅ Executing script ${scriptNum}...`)
-                terminal.writeln(`🔥 Script ${scriptNum} started successfully!`)
-                terminal.writeln(`💡 Check backend logs for actual execution details`)
-              } else {
-                terminal.writeln(`❌ Invalid script number: ${scriptNum}`)
-              }
-            }
-            terminal.writeln('')
-            terminal.write('Enter the number of the script to run: ')
-            // Clear input buffer
-            ;(terminal as any)._inputBuffer = ''
-          } else if (data === '\u007f') { // Backspace
-            terminal.write('\b \b')
-            // Update input buffer
-            const buffer = (terminal as any)._inputBuffer || ''
-            ;(terminal as any)._inputBuffer = buffer.slice(0, -1)
-          } else {
-            terminal.write(data)
-            // Update input buffer
-            ;(terminal as any)._inputBuffer = ((terminal as any)._inputBuffer || '') + data
-          }
         } catch (error) {
           console.error('Failed to send input to backend:', error)
           terminal.write(`\r\n[ERROR: Backend connection failed: ${error}]\r\n`)
         }
       })
       
-      // Set up PTY event listeners (simplified for debugging)
+      // Set up PTY event listeners - CRITICAL for interactive scripts
       const setupEventListeners = async () => {
         try {
           // Import event setup function
@@ -143,22 +85,36 @@ export default function CleanTerminal({ terminalId, terminalName }: CleanTermina
           
           const listeners = await setupTerminalEventListeners(terminalId, {
             onOutput: (output, timestamp, isStderr) => {
-              console.log(`🔥 RECEIVED PTY OUTPUT for ${terminalId}:`, { output, timestamp, isStderr })
-              // For now, just log - the local echo handles user feedback
-              // TODO: Replace local echo with real PTY output when events work
+              console.log(`🔥🔥🔥 RECEIVED PTY OUTPUT for ${terminalId}:`, { output, timestamp, isStderr })
+              if (xtermRef.current) {
+                if (isStderr) {
+                  // Write stderr in red
+                  xtermRef.current.write(`\x1b[31m${output}\x1b[0m`)
+                } else {
+                  // Write stdout - this includes menu, prompts, and all interactive output
+                  xtermRef.current.write(output)
+                }
+              }
             },
             onStatusChange: (status, pid, error) => {
-              console.log(`🔥 PTY STATUS CHANGE for ${terminalId}:`, { status, pid, error })
-              // Log status changes for debugging
+              console.log(`🔥🔥🔥 PTY STATUS CHANGE for ${terminalId}:`, { status, pid, error })
+              if (error && xtermRef.current) {
+                xtermRef.current.writeln(`\r\n[Process error: ${error}]\r\n`)
+              }
             }
           })
           
           // Store listeners for cleanup
           listenersRef.current = listeners
-          console.log(`🔥 PTY event listeners set up for ${terminalId}`)
+          console.log(`🔥 PTY event listeners set up for ${terminalId} - waiting for output events`)
           
         } catch (error) {
-          console.warn('PTY event listeners not available (expected in development):', error)
+          console.error('CRITICAL: PTY event listeners failed:', error)
+          if (xtermRef.current) {
+            xtermRef.current.writeln(`\r\n❌ CRITICAL: PTY events not working`)
+            xtermRef.current.writeln(`❌ Interactive scripts (like script 19) won't work properly`)
+            xtermRef.current.writeln(`💡 Check backend PTY plugin configuration\r\n`)
+          }
         }
       }
       

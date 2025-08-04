@@ -68,7 +68,13 @@ pub fn run() {
           "pty-output", "pty_output", "pty-data", "pty_data", 
           "pty-stdout", "pty_stdout", "terminal-output", "terminal_output",
           "pty-spawn", "pty_spawn", "pty-write", "pty_write",
-          "pty-exit", "pty_exit", "pty-resize", "pty_resize"
+          "pty-exit", "pty_exit", "pty-resize", "pty_resize",
+          // Add more possible event names from tauri-plugin-pty
+          "pty:data", "pty:output", "pty:stdout", "pty:stderr",
+          "pty:spawn", "pty:exit", "pty:resize",
+          // Try plugin-specific event names
+          "plugin:pty|data", "plugin:pty|output", "plugin:pty|stdout",
+          "tauri://pty-data", "tauri://pty-output"
       ];
       
       for event_name in possible_events {
