@@ -1,0 +1,33 @@
+version = "1.0"
+name = "maximize"
+description = "maximize to downloads"
+created_at = "2025-08-02 17:13:59 UTC"
+processing_mode = "maximize"
+target_peak = -2.0
+
+[config.defaults]
+input_directory = "/Users/caioraphael/Downloads/wav_files_new"
+target_lufs = -23.0
+target_peak = -2.0
+
+[config.paths]
+preserve_structure = true
+max_depth = 10
+
+[config.processing]
+show_progress = true
+continue_on_error = true
+
+[config.naming]
+pattern = "({filename}_maximize)"
+examples = [
+    "input.wav -> input_normalized.wav",
+    "song.mp3 -> song_normalized.mp3",
+]
+timeout_seconds = 30
+enable_debug = false
+
+[system_info]
+os = "macos"
+arch = "aarch64"
+normalizer_version = "1.0.0"

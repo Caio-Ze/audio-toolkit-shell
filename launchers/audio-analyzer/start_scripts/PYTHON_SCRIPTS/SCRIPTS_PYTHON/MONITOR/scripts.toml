@@ -1,0 +1,81 @@
+# Pro Tools Session Monitor Configuration
+# 
+# This file configures which scripts to run when Pro Tools sessions open or change.
+# You can run Python scripts, shell scripts, or any executable program.
+
+# Directory where your scripts are located (relative to this config file, or absolute path)
+script_directory = "./"
+
+# Python configuration - automatically detects virtual environments
+[python]
+# Custom Python interpreter path (optional - will auto-detect if not specified)
+# interpreter = "/path/to/python"
+
+# Custom virtual environment paths to search (auto-detected if not specified)
+# virtual_env_paths = [".venv", "venv", "env"]
+
+# Skip virtual environment checking (use system Python)
+# skip_venv_check = false
+
+# Monitoring settings
+[monitoring]
+poll_interval = 1          # How often to check for session changes (seconds)  
+retry_interval = 2         # How long to wait before retrying failed connections (seconds)
+debug_mode = true             # Show detailed debug information
+max_status_messages = 20    # Maximum number of status messages to keep in history
+
+# Script configurations
+# Each script can be:
+# - Python files (.py) - will run with the detected Python interpreter and virtual environment
+# - Shell scripts (.sh) - will run with bash  
+# - Any executable program - will run directly
+#
+# You can enable/disable scripts and set timeouts for each one.
+# Scripts can run on session open, session change, or manually.
+
+[[scripts]]
+name = "open_locucao_script.py"
+path = "open_locucao_script.py"
+enabled = true
+timeout = 30
+description = "Opens locucao script when session starts"
+run_on_session_open = true
+run_on_session_change = false
+
+[[scripts]]
+name = "import_and_spot_clip_IN_TRIM.py"
+path = "import_and_spot_clip_IN_TRIM.py"
+enabled = true
+timeout = 30
+description = "Import and spot clip with trim when session changes"
+run_on_session_open = false
+run_on_session_change = true
+
+[[scripts]]
+name = "launch_windown.sh"
+path = "launch_windown.sh"
+enabled = true
+timeout = 10
+description = "Launch window layout on session start"
+run_on_session_open = true
+run_on_session_change = false
+
+[[scripts]]
+name = "session_health_check.py"
+path = "session_health_check.py"
+enabled = false
+timeout = 15
+description = "Check session health (disabled by default)"
+run_on_session_open = true
+run_on_session_change = true
+
+[[scripts]]
+name = "rust-import-name-markers"
+path = "rust-import-name-markers/target/universal/rust-import-name-markers"
+enabled = false
+timeout = 60
+description = "Example: Run a Rust executable (disabled by default)"
+run_on_session_open = false
+run_on_session_change = true
+
+

@@ -1,0 +1,36 @@
+version = "1.0"
+name = "-23"
+description = "-23 pra downloads  folder"
+created_at = "2025-08-02 17:11:44 UTC"
+processing_mode = "lufs"
+target_lufs = -23.0
+target_peak = -2.0
+
+[config.defaults]
+input_directory = "/Users/caioraphael/Downloads"
+output_directory = "/Users/caioraphael/Downloads/_normalize"
+target_lufs = -23.0
+target_peak = -2.0
+
+[config.paths]
+preserve_structure = true
+max_depth = 10
+
+[config.processing]
+show_progress = true
+continue_on_error = true
+
+[config.naming]
+pattern = "{filename}_normalized"
+script = "echo '{filename}' | sed 's/[0-9]*$//' | sed 's/_*$//' | sed 's/$/_normalized/'"
+examples = [
+    "input.wav -> input_normalized.wav",
+    "song.mp3 -> song_normalized.mp3",
+]
+timeout_seconds = 30
+enable_debug = false
+
+[system_info]
+os = "macos"
+arch = "aarch64"
+normalizer_version = "1.0.0"

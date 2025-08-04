@@ -1,0 +1,81 @@
+script_directory = "/Users/caioraphael/Desktop/BOUNCET4/APPS_AUTOMATOR/SESSSION_MONITOR_PT_SESSIONS"
+
+[python]
+
+[[scripts]]
+name = "ABRIR_ROTEIRO.app"
+path = "ABRIR_ROTEIRO.app"
+enabled = true
+timeout = 10
+description = "macOS application - auto-discovered (disabled by default)"
+run_on_session_open = true
+run_on_session_change = false
+
+[[scripts]]
+name = "WINDOWN.app"
+path = "WINDOWN.app"
+enabled = true
+timeout = 10
+description = "macOS application - auto-discovered (disabled by default)"
+run_on_session_open = true
+run_on_session_change = false
+
+[[scripts]]
+name = "import-and-spot-clip"
+path = "import-and-spot-clip"
+enabled = false
+timeout = 300
+description = "Audio processing script - auto-discovered (disabled by default)"
+run_on_session_open = false
+run_on_session_change = false
+
+[[scripts]]
+name = "import-and-spot-clip-in-v1"
+path = "import-and-spot-clip-in-v1"
+enabled = false
+timeout = 300
+description = "Audio processing script - auto-discovered (disabled by default)"
+run_on_session_open = false
+run_on_session_change = false
+
+[[scripts]]
+name = "import-and-spot-clip-in-v1-notimelimit"
+path = "import-and-spot-clip-in-v1-notimelimit"
+enabled = false
+timeout = 300
+description = "Audio processing script - auto-discovered (disabled by default)"
+run_on_session_open = false
+run_on_session_change = false
+
+[[scripts]]
+name = "import-and-spot-clip-notimelimit"
+path = "import-and-spot-clip-notimelimit"
+enabled = true
+timeout = 300
+description = "Audio processing script - auto-discovered (disabled by default)"
+run_on_session_open = true
+run_on_session_change = false
+
+[[scripts]]
+name = "import-and-spot-clip-youlean"
+path = "import-and-spot-clip-youlean"
+enabled = false
+timeout = 300
+description = "Audio processing script - auto-discovered (disabled by default)"
+run_on_session_open = false
+run_on_session_change = false
+
+[[scripts]]
+name = "session-monitor"
+path = "session-monitor"
+enabled = false
+timeout = 300
+description = "Audio processing script - auto-discovered (disabled by default)"
+run_on_session_open = false
+run_on_session_change = false
+
+[monitoring]
+poll_interval = 1
+retry_interval = 2
+debug_mode = true
+max_status_messages = 20
