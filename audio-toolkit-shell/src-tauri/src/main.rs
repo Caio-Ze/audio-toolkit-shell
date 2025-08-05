@@ -725,24 +725,27 @@ impl TerminalEmulator {
 
 // Helper function for 256-color ANSI to RGB conversion
 fn ansi_256_to_rgb(color_index: u8) -> egui::Color32 {
+    // Use Catppuccin Frappé theme for standard colors (0-15)
+    const THEME: &CatppuccinTheme = &CatppuccinTheme::FRAPPE;
+    
     match color_index {
-        // Standard colors (0-15)
-        0 => egui::Color32::BLACK,
-        1 => egui::Color32::from_rgb(128, 0, 0), // Dark Red
-        2 => egui::Color32::from_rgb(0, 128, 0), // Dark Green
-        3 => egui::Color32::from_rgb(128, 128, 0), // Dark Yellow
-        4 => egui::Color32::from_rgb(0, 0, 128), // Dark Blue
-        5 => egui::Color32::from_rgb(128, 0, 128), // Dark Magenta
-        6 => egui::Color32::from_rgb(0, 128, 128), // Dark Cyan
-        7 => egui::Color32::from_rgb(192, 192, 192), // Light Gray
-        8 => egui::Color32::from_rgb(128, 128, 128), // Dark Gray
-        9 => egui::Color32::from_rgb(255, 0, 0), // Bright Red
-        10 => egui::Color32::from_rgb(0, 255, 0), // Bright Green
-        11 => egui::Color32::from_rgb(255, 255, 0), // Bright Yellow
-        12 => egui::Color32::from_rgb(0, 0, 255), // Bright Blue
-        13 => egui::Color32::from_rgb(255, 0, 255), // Bright Magenta
-        14 => egui::Color32::from_rgb(0, 255, 255), // Bright Cyan
-        15 => egui::Color32::WHITE,              // Bright White
+        // Standard colors (0-15) mapped to Catppuccin Frappé colors
+        0 => THEME.surface1,   // Black -> surface1
+        1 => THEME.red,        // Dark Red -> Catppuccin red
+        2 => THEME.green,      // Dark Green -> Catppuccin green
+        3 => THEME.yellow,     // Dark Yellow -> Catppuccin yellow
+        4 => THEME.blue,       // Dark Blue -> Catppuccin blue
+        5 => THEME.mauve,      // Dark Magenta -> Catppuccin mauve
+        6 => THEME.teal,       // Dark Cyan -> Catppuccin teal
+        7 => THEME.subtext1,   // Light Gray -> Catppuccin subtext1
+        8 => THEME.surface2,   // Dark Gray -> Catppuccin surface2
+        9 => THEME.red,        // Bright Red -> Catppuccin red (same as dark red for consistency)
+        10 => THEME.green,     // Bright Green -> Catppuccin green
+        11 => THEME.yellow,    // Bright Yellow -> Catppuccin yellow
+        12 => THEME.blue,      // Bright Blue -> Catppuccin blue
+        13 => THEME.mauve,     // Bright Magenta -> Catppuccin mauve
+        14 => THEME.teal,      // Bright Cyan -> Catppuccin teal
+        15 => THEME.text,      // Bright White -> Catppuccin text
 
         // 216 color cube (16-231)
         16..=231 => {
