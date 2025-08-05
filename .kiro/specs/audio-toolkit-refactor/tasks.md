@@ -14,7 +14,7 @@
   - Document the purpose and confirm they are safe to remove
   - _Requirements: 1.1, 1.4, 2.1_
 
-- [-] 3. Remove legacy Python fix scripts
+- [x] 3. Remove legacy Python fix scripts
   - Delete fix_terminal_ui.py with git commit and descriptive message
   - Delete fix_ui_complete.py with git commit and descriptive message  
   - Delete fix_ui_rendering.py with git commit and descriptive message
@@ -22,7 +22,7 @@
   - Push each commit to GitHub for backup
   - _Requirements: 2.1, 2.2, 2.3, 5.1, 5.2, 5.3_
 
-- [ ] 4. Clean up development mock files and test scripts
+- [-] 4. Clean up development mock files and test scripts
   - Remove dev-mocks directory (conflicts with no-mock-scripts requirement)
   - Remove test_wrapper.sh files from root and src-tauri directories
   - Commit each removal separately with descriptive messages
