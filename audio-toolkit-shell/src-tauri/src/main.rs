@@ -10,6 +10,122 @@ use std::sync::mpsc::{channel, Receiver, TryRecvError};
 use std::thread;
 use unicode_width::UnicodeWidthChar;
 
+/// Catppuccin Frappé color theme for the Audio Toolkit Shell
+/// 
+/// This struct provides compile-time constants for all Catppuccin Frappé colors,
+/// ensuring optimal performance and consistent theming throughout the application.
+/// 
+/// Color palette based on Catppuccin Frappé variant:
+/// https://github.com/catppuccin/catppuccin
+#[derive(Clone, Copy, Debug)]
+pub struct CatppuccinTheme {
+    // Base colors for backgrounds and surfaces
+    /// Main background color (#303446) - Used for primary backgrounds
+    pub base: egui::Color32,
+    /// Secondary background color (#292c3c) - Used for elevated surfaces
+    pub mantle: egui::Color32,
+    /// Darkest background color (#232634) - Used for deepest surfaces
+    pub crust: egui::Color32,
+
+    // Text hierarchy colors
+    /// Primary text color (#c6d0f5) - Used for main text content
+    pub text: egui::Color32,
+    /// Secondary text color (#b5bfe2) - Used for less important text
+    pub subtext1: egui::Color32,
+    /// Tertiary text color (#a5adce) - Used for subtle text and hints
+    pub subtext0: egui::Color32,
+
+    // Surface colors for UI elements
+    /// Lowest elevation surface (#414559) - Used for subtle elevation
+    pub surface0: egui::Color32,
+    /// Medium elevation surface (#51576d) - Used for moderate elevation
+    pub surface1: egui::Color32,
+    /// Highest elevation surface (#626880) - Used for prominent elevation
+    pub surface2: egui::Color32,
+
+    // Overlay colors
+    /// Overlay color (#737994) - Used for overlays and disabled states
+    pub overlay0: egui::Color32,
+    /// Secondary overlay color (#838ba7) - Used for secondary overlays
+    pub overlay1: egui::Color32,
+    /// Tertiary overlay color (#949cbb) - Used for tertiary overlays
+    pub overlay2: egui::Color32,
+
+    // Semantic accent colors
+    /// Blue accent color (#8caaee) - Used for primary actions and info
+    pub blue: egui::Color32,
+    /// Lavender accent color (#babbf1) - Used for special highlights
+    pub lavender: egui::Color32,
+    /// Sapphire accent color (#85c1dc) - Used for secondary actions
+    pub sapphire: egui::Color32,
+    /// Sky accent color (#99d1db) - Used for tertiary actions
+    pub sky: egui::Color32,
+    /// Teal accent color (#81c8be) - Used for success and safe actions
+    pub teal: egui::Color32,
+    /// Green accent color (#a6d189) - Used for success states
+    pub green: egui::Color32,
+    /// Yellow accent color (#e5c890) - Used for warnings and caution
+    pub yellow: egui::Color32,
+    /// Peach accent color (#ef9f76) - Used for warm accents
+    pub peach: egui::Color32,
+    /// Maroon accent color (#ea999c) - Used for muted red accents
+    pub maroon: egui::Color32,
+    /// Red accent color (#e78284) - Used for errors and danger
+    pub red: egui::Color32,
+    /// Mauve accent color (#ca9ee6) - Used for special accents and highlights
+    pub mauve: egui::Color32,
+    /// Pink accent color (#f4b8e4) - Used for decorative accents
+    pub pink: egui::Color32,
+    /// Flamingo accent color (#eebebe) - Used for soft accents
+    pub flamingo: egui::Color32,
+    /// Rosewater accent color (#f2d5cf) - Used for subtle warm accents
+    pub rosewater: egui::Color32,
+}
+
+impl CatppuccinTheme {
+    /// Catppuccin Frappé theme constant with all colors defined at compile-time
+    /// 
+    /// This constant provides immediate access to all Catppuccin Frappé colors
+    /// without any runtime initialization overhead.
+    pub const FRAPPE: Self = Self {
+        // Base colors
+        base: egui::Color32::from_rgb(0x30, 0x34, 0x46),      // #303446
+        mantle: egui::Color32::from_rgb(0x29, 0x2c, 0x3c),    // #292c3c
+        crust: egui::Color32::from_rgb(0x23, 0x26, 0x34),     // #232634
+
+        // Text colors
+        text: egui::Color32::from_rgb(0xc6, 0xd0, 0xf5),      // #c6d0f5
+        subtext1: egui::Color32::from_rgb(0xb5, 0xbf, 0xe2),  // #b5bfe2
+        subtext0: egui::Color32::from_rgb(0xa5, 0xad, 0xce),  // #a5adce
+
+        // Surface colors
+        surface0: egui::Color32::from_rgb(0x41, 0x45, 0x59),  // #414559
+        surface1: egui::Color32::from_rgb(0x51, 0x57, 0x6d),  // #51576d
+        surface2: egui::Color32::from_rgb(0x62, 0x68, 0x80),  // #626880
+
+        // Overlay colors
+        overlay0: egui::Color32::from_rgb(0x73, 0x79, 0x94),  // #737994
+        overlay1: egui::Color32::from_rgb(0x83, 0x8b, 0xa7),  // #838ba7
+        overlay2: egui::Color32::from_rgb(0x94, 0x9c, 0xbb),  // #949cbb
+
+        // Accent colors
+        blue: egui::Color32::from_rgb(0x8c, 0xaa, 0xee),      // #8caaee
+        lavender: egui::Color32::from_rgb(0xba, 0xbb, 0xf1),  // #babbf1
+        sapphire: egui::Color32::from_rgb(0x85, 0xc1, 0xdc),  // #85c1dc
+        sky: egui::Color32::from_rgb(0x99, 0xd1, 0xdb),       // #99d1db
+        teal: egui::Color32::from_rgb(0x81, 0xc8, 0xbe),      // #81c8be
+        green: egui::Color32::from_rgb(0xa6, 0xd1, 0x89),     // #a6d189
+        yellow: egui::Color32::from_rgb(0xe5, 0xc8, 0x90),    // #e5c890
+        peach: egui::Color32::from_rgb(0xef, 0x9f, 0x76),     // #ef9f76
+        maroon: egui::Color32::from_rgb(0xea, 0x99, 0x9c),    // #ea999c
+        red: egui::Color32::from_rgb(0xe7, 0x82, 0x84),       // #e78284
+        mauve: egui::Color32::from_rgb(0xca, 0x9e, 0xe6),     // #ca9ee6
+        pink: egui::Color32::from_rgb(0xf4, 0xb8, 0xe4),      // #f4b8e4
+        flamingo: egui::Color32::from_rgb(0xee, 0xbe, 0xbe),  // #eebebe
+        rosewater: egui::Color32::from_rgb(0xf2, 0xd5, 0xcf), // #f2d5cf
+    };
+}
+
 #[derive(Clone)]
 struct TerminalCell {
     character: char,
@@ -21,7 +137,7 @@ impl Default for TerminalCell {
     fn default() -> Self {
         Self {
             character: ' ',
-            color: egui::Color32::WHITE,
+            color: CatppuccinTheme::FRAPPE.text,
             bold: false,
         }
     }
@@ -47,7 +163,7 @@ impl TerminalEmulator {
             cursor_col: 0,
             rows,
             cols,
-            current_color: egui::Color32::WHITE,
+            current_color: CatppuccinTheme::FRAPPE.text,
             bold: false,
         }
     }
@@ -536,9 +652,12 @@ impl TerminalEmulator {
     }
 
     fn handle_graphics_mode(&mut self, params: &[&str]) {
+        // Use Catppuccin Frappé theme for ANSI color mapping
+        const THEME: &CatppuccinTheme = &CatppuccinTheme::FRAPPE;
+        
         if params.is_empty() || (params.len() == 1 && params[0].is_empty()) {
-            // Reset to safe defaults
-            self.current_color = egui::Color32::WHITE;
+            // Reset to Catppuccin text color instead of white
+            self.current_color = THEME.text;
             self.bold = false;
             return;
         }
@@ -558,27 +677,30 @@ impl TerminalEmulator {
             
             match param {
                 "0" => {
-                    self.current_color = egui::Color32::WHITE;
+                    // Reset to Catppuccin text color
+                    self.current_color = THEME.text;
                     self.bold = false;
                 }
                 "1" => self.bold = true,
                 "22" => self.bold = false,
-                "30" => self.current_color = egui::Color32::BLACK,
-                "31" => self.current_color = egui::Color32::from_rgb(205, 49, 49),
-                "32" => self.current_color = egui::Color32::from_rgb(13, 188, 121),
-                "33" => self.current_color = egui::Color32::from_rgb(229, 229, 16),
-                "34" => self.current_color = egui::Color32::from_rgb(36, 114, 200),
-                "35" => self.current_color = egui::Color32::from_rgb(188, 63, 188),
-                "36" => self.current_color = egui::Color32::from_rgb(17, 168, 205),
-                "37" => self.current_color = egui::Color32::WHITE,
-                "90" => self.current_color = egui::Color32::from_rgb(102, 102, 102),
-                "91" => self.current_color = egui::Color32::from_rgb(241, 76, 76),
-                "92" => self.current_color = egui::Color32::from_rgb(35, 209, 139),
-                "93" => self.current_color = egui::Color32::from_rgb(245, 245, 67),
-                "94" => self.current_color = egui::Color32::from_rgb(59, 142, 234),
-                "95" => self.current_color = egui::Color32::from_rgb(214, 112, 214),
-                "96" => self.current_color = egui::Color32::from_rgb(41, 184, 219),
-                "97" => self.current_color = egui::Color32::WHITE,
+                // ANSI color codes 30-37 mapped to Catppuccin Frappé colors
+                "30" => self.current_color = THEME.surface1,  // Black -> surface1
+                "31" => self.current_color = THEME.red,       // Red -> red
+                "32" => self.current_color = THEME.green,     // Green -> green
+                "33" => self.current_color = THEME.yellow,    // Yellow -> yellow
+                "34" => self.current_color = THEME.blue,      // Blue -> blue
+                "35" => self.current_color = THEME.mauve,     // Magenta -> mauve
+                "36" => self.current_color = THEME.teal,      // Cyan -> teal
+                "37" => self.current_color = THEME.text,      // White -> text
+                // Bright ANSI color codes 90-97 mapped to same Catppuccin colors with surface2 for bright black
+                "90" => self.current_color = THEME.surface2,  // Bright Black -> surface2
+                "91" => self.current_color = THEME.red,       // Bright Red -> red
+                "92" => self.current_color = THEME.green,     // Bright Green -> green
+                "93" => self.current_color = THEME.yellow,    // Bright Yellow -> yellow
+                "94" => self.current_color = THEME.blue,      // Bright Blue -> blue
+                "95" => self.current_color = THEME.mauve,     // Bright Magenta -> mauve
+                "96" => self.current_color = THEME.teal,      // Bright Cyan -> teal
+                "97" => self.current_color = THEME.text,      // Bright White -> text
                 "38" => {
                     // 256-color foreground with bounds checking
                     if i + 2 < params.len() && 
@@ -1161,6 +1283,19 @@ impl AudioToolkitApp {
 
 impl App for AudioToolkitApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
+        // Apply Catppuccin Frappé theme to egui context
+        let mut style = (*ctx.style()).clone();
+        
+        // Set window and panel backgrounds to Catppuccin base color
+        style.visuals.window_fill = CatppuccinTheme::FRAPPE.base;
+        style.visuals.panel_fill = CatppuccinTheme::FRAPPE.base;
+        
+        // Set text color to Catppuccin text color
+        style.visuals.override_text_color = Some(CatppuccinTheme::FRAPPE.text);
+        
+        // Apply the themed style to the egui context
+        ctx.set_style(style);
+        
         // Request a repaint to ensure we check for new PTY data
         ctx.request_repaint();
 
@@ -1198,9 +1333,9 @@ impl App for AudioToolkitApp {
                     let is_focused = self.focused_terminal == 0;
                     let focus_indicator = if is_focused { "🔵" } else { "⚪" };
                     let title_color = if is_focused {
-                        egui::Color32::LIGHT_BLUE
+                        CatppuccinTheme::FRAPPE.blue
                     } else {
-                        egui::Color32::GRAY
+                        CatppuccinTheme::FRAPPE.subtext0
                     };
 
                     ui.horizontal(|ui| {
@@ -1212,7 +1347,7 @@ impl App for AudioToolkitApp {
                         if !is_focused {
                             ui.label(
                                 egui::RichText::new("(Press Tab to focus)")
-                                    .color(egui::Color32::DARK_GRAY)
+                                    .color(CatppuccinTheme::FRAPPE.overlay0)
                                     .italics(),
                             );
                         }
@@ -1273,9 +1408,9 @@ impl App for AudioToolkitApp {
                 let is_focused = self.focused_terminal == 1;
                 let focus_indicator = if is_focused { "🔵" } else { "⚪" };
                 let title_color = if is_focused {
-                    egui::Color32::LIGHT_BLUE
+                    CatppuccinTheme::FRAPPE.blue
                 } else {
-                    egui::Color32::GRAY
+                    CatppuccinTheme::FRAPPE.subtext0
                 };
 
                 ui.horizontal(|ui| {
@@ -1287,7 +1422,7 @@ impl App for AudioToolkitApp {
                     if !is_focused {
                         ui.label(
                             egui::RichText::new("(Press Tab to focus)")
-                                .color(egui::Color32::DARK_GRAY)
+                                .color(CatppuccinTheme::FRAPPE.overlay0)
                                 .italics(),
                         );
                     }
