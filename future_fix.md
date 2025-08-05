@@ -1,30 +1,70 @@
-The Problem: Misaligned Lines
-The box-drawing lines in your terminal are misaligned because the application's internal grid is out of sync with what's on screen.
+### **Technical Implementation Plan: Rendering and Theming Enhancements**
 
-This happens because your code assumes every character, including emojis (✅, ●), occupies a single column. In reality, these are wide characters that take up two columns. When your program encounters one, it advances the cursor by only one space, causing all subsequent characters on that line—including the vertical bars | of your table—to be drawn at the wrong position.
+This document outlines the strategy for two key improvements to the terminal application: correcting rendering misalignments and implementing a new visual theme.
 
-The Solution: Width-Aware Cursor Logic
-To fix the line alignment, the cursor's movement must be based on the actual rendered width of each character, not just its count.
+***
 
-The precise fix involves these steps:
+### **I. Rendering Alignment Correction**
 
-Calculate True Width: Use the unicode-width crate to get the correct column width (1 or 2) for every character before it's placed in the buffer.
+* **Objective**: Eliminate layout misalignments in the terminal grid, ensuring that elements like box-drawing characters align correctly.
 
-Update Cursor Position: Modify TerminalEmulator::write_char to advance the cursor by the character's true width.
+* **Problem Analysis**: The root cause of the alignment issue is the application's incorrect assumption that all `char` types occupy a single column of space. Wide characters, particularly emojis (e.g., `✅`, `●`), occupy two columns. The current logic advances the cursor by a single unit for every character, causing a desynchronization between the internal buffer's coordinates and the actual visual layout.
 
-Rust
+* **Implementation Strategy**: The cursor and buffer logic must be updated to be width-aware.
 
-// Before
-self.cursor_col += 1;
+    1.  **Integrate `unicode-width`**: Add the `unicode-width` crate to calculate the true column-width of each character.
+    2.  **Width-Aware Cursor**: In `TerminalEmulator::write_char`, modify the cursor advancement logic to increment `cursor_col` by the character's actual width (`1` or `2`), not by a fixed value.
+    3.  **Buffer Placeholders**: When a wide character is written to the buffer, the subsequent cell in the same row must be filled with a `\0` null character. This acts as a placeholder, signifying that the space is occupied.
+    4.  **Update Rendering**: The rendering function (`AudioToolkitApp::render_row`) must be updated to explicitly ignore and skip drawing any cell containing the `\0` placeholder.
 
-// After
-let width = ch.width().unwrap_or(1);
-self.cursor_col += width;
-Reserve Space for Wide Characters: When a wide character (width > 1) is written to buffer[row][col], you must mark the next cell, buffer[row][col + 1], as a placeholder (e.g., with a \0 character). This tells your application that the space is already occupied.
+***
 
-Skip Rendering Placeholders: In your rendering function, AudioToolkitApp::render_row, add a condition to skip drawing any cell that contains the \0 placeholder. This prevents visual artifacts and ensures the wide character is drawn correctly across two cells.
+### **II. Visual Theming with Catppuccin**
 
-By implementing these changes, the internal grid will accurately map to the visual display, guaranteeing your box-drawing lines will always be perfectly aligned.
+* **Objective**: Integrate the **Catppuccin** (Mocha flavor) color scheme to create a visually appealing and cohesive user interface.
 
-Alternative Strategy (If Needed)
-If the primary solution fails, the only other robust alternative is to use a text shaping engine (e.g., cosmic-text). Instead of managing a grid of characters, a shaper calculates the exact pixel position of each glyph directly from the font file. This is a more complex architectural change but provides perfect layout accuracy for all text, including ligatures and complex scripts. However, for fixing the line alignment caused by wide characters, the first solution is standard and sufficient.
+* **Implementation Strategy**: The approach involves centralizing color definitions and applying them throughout the application.
+
+    1.  **Define a `Theme` Struct**: Create a new struct that holds all the Catppuccin colors as `egui::Color32` fields. This struct will act as a single source of truth for all UI colors.
+
+        ```rust
+        // Example struct
+        struct CatppuccinTheme {
+            rosewater: egui::Color32,
+            flamingo: egui::Color32,
+            // ... all other colors
+            base: egui::Color32,
+            text: egui::Color32,
+        }
+
+        impl Default for CatppuccinTheme {
+            fn default() -> Self {
+                Self {
+                    rosewater: egui::Color32::from_rgb(242, 213, 207),
+                    // ... initialize all colors
+                    base: egui::Color32::from_rgb(48, 52, 70),
+                    text: egui::Color32::from_rgb(198, 208, 245),
+                }
+            }
+        }
+        ```
+
+    2.  **Map ANSI Colors**: Update the `TerminalEmulator::handle_graphics_mode` function. Instead of using a generic palette, it will now map the 16 standard ANSI color codes (30-37, 90-97) to their semantic equivalents in the `CatppuccinTheme` struct.
+
+        * **Default**: `text` on `base`.
+        * **ANSI Black (30)**: `surface1`
+        * **ANSI Red (31)**: `red`
+        * **ANSI Green (32)**: `green`
+        * **ANSI Yellow (33)**: `yellow`
+        * **ANSI Blue (34)**: `blue`
+        * **ANSI Magenta (35)**: `mauve`
+        * **ANSI Cyan (36)**: `teal`
+        * **ANSI White (37)**: `text`
+        * *Bright variants (90-97) will map to the same colors for consistency.*
+
+    3.  **Apply Theme to UI**: In the main `AudioToolkitApp::update` method, replace all hardcoded `egui::Color32` values with fields from an instance of the `CatppuccinTheme` struct. This includes:
+        * Setting the background of `egui::SidePanel` and `egui::CentralPanel` to `theme.base`.
+        * Changing the text color of UI labels (like the `$` prompt) to `theme.text`.
+        * Using theme colors like `theme.blue` for focus indicators and `theme.surface0` for separators.
+
+By executing this plan, the application will be both functionally correct, with perfectly aligned text, and aesthetically refined with the professional Catppuccin theme.
