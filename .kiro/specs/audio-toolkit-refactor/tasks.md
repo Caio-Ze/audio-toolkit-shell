@@ -29,27 +29,27 @@
   - Verify application functionality remains intact after cleanup
   - _Requirements: 2.1, 2.2, 2.3, 5.1, 5.2_
 
-- [-] 5. Remove system files and update .gitignore
+- [x] 5. Remove system files and update .gitignore
   - Delete all .DS_Store files from project directories
   - Update .gitignore to prevent future .DS_Store commits
   - Commit the cleanup and .gitignore update
   - _Requirements: 4.3, 5.1, 5.2_
 
-- [ ] 6. Analyze and verify Rust implementation completeness
+- [x] 6. Analyze and verify Rust implementation completeness
   - Review main.rs to confirm it contains complete eframe/egui implementation
   - Verify all terminal functionality is implemented in Rust code
   - Confirm no dependencies on removed Python scripts or external components
   - Test multi-tab functionality and terminal interaction
   - _Requirements: 3.1, 3.2, 3.3_
 
-- [ ] 7. Validate and optimize configuration files
+- [x] 7. Validate and optimize configuration files
   - Analyze config.toml for valid paths and executable references
   - Test each configured tab to ensure executables launch correctly
   - Remove any legacy configuration entries from previous architecture
   - Commit any configuration optimizations
   - _Requirements: 1.3, 4.2, 5.1_
 
-- [ ] 8. Analyze and clean up Cargo.toml dependencies
+- [x] 8. Analyze and clean up Cargo.toml dependencies
   - Review all dependencies in Cargo.toml for current usage
   - Search Rust source code to verify each dependency is actually used
   - Remove any unused dependencies from Tauri + React migration
@@ -57,7 +57,7 @@
   - Commit dependency cleanup with descriptive message
   - _Requirements: 4.1, 4.4, 5.1, 5.2_
 
-- [ ] 9. Evaluate Tauri infrastructure directories
+- [-] 9. Evaluate Tauri infrastructure directories
   - Analyze capabilities/, gen/, and icons/ directories for current relevance
   - Determine if these directories are needed for current native Rust implementation
   - Remove unused Tauri-specific files if migration to native Rust is complete
