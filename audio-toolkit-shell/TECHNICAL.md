@@ -2,7 +2,7 @@
 
 ## Architecture Overview
 
-Audio Toolkit Shell is built as a native Rust application using the eframe/egui ecosystem for GUI and portable-pty for terminal integration.
+Audio Toolkit Shell is built as a native Rust application using the eframe/egui ecosystem for GUI and portable-pty for terminal integration. The application features a character-by-character terminal emulator with real PTY backing for authentic terminal behavior.
 
 ## Core Components
 
@@ -12,6 +12,7 @@ Audio Toolkit Shell is built as a native Rust application using the eframe/egui 
 struct AudioToolkitApp {
     active_tab: usize,
     tabs: Vec<TerminalTab>,
+    config: AppConfig,
 }
 
 struct TerminalTab {
@@ -20,9 +21,19 @@ struct TerminalTab {
     pty_master: Box<dyn portable_pty::MasterPty + Send>,
     pty_writer: Option<Box<dyn std::io::Write + Send>>,
     output_rx: Receiver<String>,
-    output: String,
+    terminal_emulator: TerminalEmulator,
     input: String,
     needs_restart: bool,
+}
+
+struct TerminalEmulator {
+    buffer: Vec<Vec<TerminalCell>>,
+    cursor_row: usize,
+    cursor_col: usize,
+    rows: usize,
+    cols: usize,
+    current_color: egui::Color32,
+    bold: bool,
 }
 ```
 
@@ -52,13 +63,30 @@ Each terminal tab uses `portable-pty` for true terminal behavior:
 - **Output Capture**: Background threads read PTY output via channels
 - **Input Handling**: Persistent PTY writer for user input
 
-### 4. Threading Model
+### 4. Terminal Emulation
+
+The application implements a character-based terminal emulator:
+
+```rust
+struct TerminalCell {
+    character: char,
+    color: egui::Color32,
+    bold: bool,
+}
+```
+
+- **Character-by-character rendering** for accurate display
+- **ANSI escape sequence processing** for colors and formatting
+- **Cursor management** with proper positioning
+- **Buffer management** with configurable dimensions
+
+### 5. Threading Model
 
 ```
 Main Thread (GUI)
-├── Tab 1 Reader Thread → Channel → UI Update
-├── Tab 2 Reader Thread → Channel → UI Update
-└── Tab N Reader Thread → Channel → UI Update
+├── Tab 1 Reader Thread → Channel → Terminal Emulator → UI Update
+├── Tab 2 Reader Thread → Channel → Terminal Emulator → UI Update
+└── Tab N Reader Thread → Channel → Terminal Emulator → UI Update
 ```
 
 ## Implementation Details
@@ -81,9 +109,10 @@ let cmd = if config.command.contains('/') {
 ### Output Processing
 
 1. **Raw PTY Output**: Captured in background threads
-2. **ANSI Stripping**: Escape sequences removed for clean display
-3. **Pattern Detection**: Success patterns monitored for auto-restart
-4. **UI Update**: Processed output sent to main thread via channels
+2. **ANSI Processing**: Escape sequences parsed for colors and formatting
+3. **Terminal Emulation**: Characters rendered to terminal buffer with proper positioning
+4. **Pattern Detection**: Success patterns monitored for auto-restart
+5. **UI Update**: Terminal buffer rendered to GUI with character-level precision
 
 ### Auto-Restart Logic
 

@@ -11,6 +11,8 @@ The configuration file must be located at:
 src-tauri/config.toml
 ```
 
+This file defines the application behavior, window settings, and terminal tab configurations.
+
 ## Basic Structure
 
 ```toml
