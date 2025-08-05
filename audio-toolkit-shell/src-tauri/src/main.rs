@@ -68,13 +68,21 @@ impl TerminalEmulator {
 
     fn write_char(&mut self, ch: char) {
         if self.cursor_row < self.rows && self.cursor_col < self.cols {
+            // Determine color: use white/gray for box drawing characters, current color for text
+            let char_color = if self.is_box_drawing_char(ch) {
+                egui::Color32::from_rgb(128, 128, 128) // Gray for box drawing
+            } else {
+                self.current_color
+            };
+            
+            // Write the character to the current position
             self.buffer[self.cursor_row][self.cursor_col] = TerminalCell {
                 character: ch,
-                color: self.current_color,
+                color: char_color,
                 bold: self.bold,
             };
 
-            // Advance cursor
+            // Advance cursor by 1 (simple approach)
             self.cursor_col += 1;
             if self.cursor_col >= self.cols {
                 self.cursor_col = 0;
@@ -87,6 +95,25 @@ impl TerminalEmulator {
                 }
             }
         }
+    }
+    
+    fn is_box_drawing_char(&self, ch: char) -> bool {
+        matches!(ch, 
+            // Box drawing characters (Unicode block 2500-257F)
+            '─' | '━' | '│' | '┃' | '┌' | '┍' | '┎' | '┏' | 
+            '┐' | '┑' | '┒' | '┓' | '└' | '┕' | '┖' | '┗' | 
+            '┘' | '┙' | '┚' | '┛' | '├' | '┝' | '┞' | '┟' | 
+            '┠' | '┡' | '┢' | '┣' | '┤' | '┥' | '┦' | '┧' | 
+            '┨' | '┩' | '┪' | '┫' | '┬' | '┭' | '┮' | '┯' | 
+            '┰' | '┱' | '┲' | '┳' | '┴' | '┵' | '┶' | '┷' | 
+            '┸' | '┹' | '┺' | '┻' | '┼' | '┽' | '┾' | '┿' | 
+            '╀' | '╁' | '╂' | '╃' | '╄' | '╅' | '╆' | '╇' | 
+            '╈' | '╉' | '╊' | '╋' | '╌' | '╍' | '╎' | '╏' | 
+            '═' | '║' | '╒' | '╓' | '╔' | '╕' | '╖' | '╗' | 
+            '╘' | '╙' | '╚' | '╛' | '╜' | '╝' | '╞' | '╟' | 
+            '╠' | '╡' | '╢' | '╣' | '╤' | '╥' | '╦' | '╧' | 
+            '╨' | '╩' | '╪' | '╫' | '╬' | '╭' | '╮' | '╯' | '╰'
+        )
     }
 
     fn handle_newline(&mut self) {
@@ -820,85 +847,31 @@ impl AudioToolkitApp {
         }
     }
 
-    /// Renders a terminal row with run-coalescing optimization.
-    ///
-    /// Run-coalescing groups consecutive cells with identical styling (color + bold)
-    /// into single text widgets, reducing UI elements and improving performance.
-    /// This avoids creating separate labels for each character when they share formatting.
     fn render_row(row: &[TerminalCell], ui: &mut egui::Ui) {
-        if row.is_empty() {
-            return;
-        }
-
-        // Initialize run-coalescing state with first cell's attributes
-        let mut accumulated_text = String::new();
-        let mut current_color = row[0].color;
-        let mut current_bold = row[0].bold;
-
-        // Set spacing to minimal for tight text layout
-        ui.spacing_mut().item_spacing.x = 0.0;
-
-        for cell in row {
-            // Run-coalescing logic: check if current cell continues the same style run
-            if cell.color == current_color && cell.bold == current_bold {
-                // Same style as current run - accumulate this character
-                accumulated_text.push(cell.character);
-            } else {
-                // Style boundary detected - flush the current run as a single widget
-                if !accumulated_text.is_empty() {
-                    let mut rich_text = egui::RichText::new(&accumulated_text)
-                        .font(egui::FontId::monospace(12.0))
-                        .color(current_color);
-
-                    if current_bold {
-                        rich_text = rich_text.strong();
-                    }
-
-                    // Render the coalesced run as a single label
-                    ui.add(egui::Label::new(rich_text).wrap(false));
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for cell in row {
+                let mut rich_text = egui::RichText::new(cell.character.to_string())
+                    .font(egui::FontId::monospace(12.0))
+                    .color(cell.color);
+                
+                if cell.bold {
+                    rich_text = rich_text.strong();
                 }
-
-                // Start new run with current cell's style attributes
-                accumulated_text.clear();
-                accumulated_text.push(cell.character);
-                current_color = cell.color;
-                current_bold = cell.bold;
+                
+                ui.add(egui::Label::new(rich_text).wrap(false).selectable(false));
             }
-        }
-
-        // Flush final run after processing entire row
-        if !accumulated_text.is_empty() {
-            let mut rich_text = egui::RichText::new(&accumulated_text)
-                .font(egui::FontId::monospace(12.0))
-                .color(current_color);
-
-            if current_bold {
-                rich_text = rich_text.strong();
-            }
-
-            ui.add(egui::Label::new(rich_text).wrap(false));
-        }
+        });
     }
 
     fn render_terminal_buffer(ui: &mut egui::Ui, buffer: &[Vec<TerminalCell>]) {
-        // Set minimal spacing for tighter layout
         ui.spacing_mut().item_spacing.y = 0.0;
         ui.spacing_mut().item_spacing.x = 0.0;
-
-        ui.vertical(|ui| {
-            for row in buffer {
-                // Skip completely empty rows to avoid unnecessary spacing
-                if row.iter().all(|cell| cell.character == ' ') {
-                    ui.add_space(12.0); // Single line height for empty rows
-                    continue;
-                }
-
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    Self::render_row(row, ui);
-                });
-            }
-        });
+        
+        for row in buffer {
+            Self::render_row(row, ui);
+        }
     }
 
     fn handle_terminal_key_input(
