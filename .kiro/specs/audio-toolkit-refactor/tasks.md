@@ -22,14 +22,14 @@
   - Push each commit to GitHub for backup
   - _Requirements: 2.1, 2.2, 2.3, 5.1, 5.2, 5.3_
 
-- [-] 4. Clean up development mock files and test scripts
+- [x] 4. Clean up development mock files and test scripts
   - Remove dev-mocks directory (conflicts with no-mock-scripts requirement)
   - Remove test_wrapper.sh files from root and src-tauri directories
   - Commit each removal separately with descriptive messages
   - Verify application functionality remains intact after cleanup
   - _Requirements: 2.1, 2.2, 2.3, 5.1, 5.2_
 
-- [ ] 5. Remove system files and update .gitignore
+- [-] 5. Remove system files and update .gitignore
   - Delete all .DS_Store files from project directories
   - Update .gitignore to prevent future .DS_Store commits
   - Commit the cleanup and .gitignore update
