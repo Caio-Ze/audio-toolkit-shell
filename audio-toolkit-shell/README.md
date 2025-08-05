@@ -1,5 +1,128 @@
 # Audio Toolkit Shell
 
+A Rust-based terminal emulator application leveraging `eframe` and `egui` for high-performance audio tool workflows. This application provides a unified, multi-tab terminal interface for managing audio processing tools efficiently.
+
+## Project Status: Audio Toolkit Shell
+
+### Current State
+- **Functionality**: The terminal emulator is functioning correctly with character-by-character rendering. Simplified layout and rendering logic has resolved previously seen alignment issues.
+- **Colors and Style**: Supports colored and bold text, with special handling for box drawing characters in a neutral gray color.
+
+### Outstanding Issues
+- **Minor Misalignments**: Some minor alignment inconsistencies persist, potentially due to font rendering or specific character sequences.
+
+### Planned Improvements
+#### 1. Alignment Tweaks
+- **Objective**: Reduce any remaining inconsistencies in text alignment.
+- **Approach**: Investigate specific sequences causing misalignment and refine character spacing and layout calculations.
+
+#### 2. Themed Appearance - CAT-Poutine
+- **Vision**: Introduce a playful CAT-Poutine theme to enhance visual appeal.
+- **Features**:
+  - Custom color palette inspired by cats and poutine.
+  - Themed ASCII art or graphics in the terminal title or start screen.
+
+## Key Features
+### Native Performance
+- Built entirely in Rust for maximum performance
+- Real PTY-backed terminal sessions using `portable-pty`
+- Direct integration for accurate terminal behavior
+
+### Configuration
+- Configurable via `config.toml`
+- Per-tab executable auto-launch
+- Window size and appearance customization
+
+### Interactive Terminals
+- Full keyboard input support for complex executables
+- ANSI color code processing for clean output
+- Persistent input/output handling
+
+## Architecture
+- **Core Technology**: Rust with `eframe` and `egui` for GUI
+- **Terminal Management**: `portable-pty` for real terminal functionality
+- **Configuration**: TOML-based configuration for tabs and settings
+
+## Getting Started
+### Prerequisites
+- **macOS**: Native target
+- **Rust 1.77.2+**
+
+### Installation
+1. **Clone the Repository**
+   ```bash
+   git clone <repository-url>
+   cd audio-toolkit-shell
+   ```
+
+2. **Build the Application**
+   ```bash
+   cd src-tauri
+   cargo build --release
+   ```
+
+3. **Configure Tabs**
+   Edit `config.toml` to configure your terminal tabs:
+   ```toml
+   [app]
+   name = "Audio Toolkit Shell"
+   window_width = 1280
+   window_height = 720
+
+   [[tabs]]
+   title = "Start Scripts"
+   command = "/path/to/your/executable"
+   auto_restart_on_success = true
+   success_patterns = ["Completed successfully", "SCRIPT MENU"]
+   ```
+
+4. **Run the Application**
+   ```bash
+   cargo run
+   ```
+
+## Usage
+1. **Launch**: Run `cargo run` to start the application
+2. **Navigate**: Click tabs to switch between terminals
+3. **Interact**: Use the input field to execute commands
+4. **Workflow**: Configured tabs auto-launch executables
+5. **Automation**: Auto-detects completion patterns for workflow automation
+
+## Development
+### Project Structure
+```
+audio-toolkit-shell/
+├── src-tauri/
+│   ├── src/
+│   │   └── main.rs
+│   ├── config.toml
+│   └── Cargo.toml
+└── README.md
+```
+
+### Key Dependencies
+- `eframe` & `egui`: GUI framework
+- `portable-pty`: PTY management
+- `serde` & `toml`: Configuration parsing
+
+### Building & Running
+```bash
+cargo build
+cargo run
+```
+
+## Contributing
+1. Ensure you have Rust 1.77.2+ installed
+2. Test on macOS for full compatibility
+3. Follow Rust best practices
+
+## License
+MIT License - Refer to LICENSE file for details.
+
+---
+
+**Audio Toolkit Shell** - A versatile, efficient multi-tab terminal for audio tool automation.
+
 A high-performance, native macOS multi-tab terminal application built entirely in Rust. Provides a unified interface for audio workflow tools with configurable tabs and automatic executable launching.
 
 ## 🎯 **Project Overview**
