@@ -57,7 +57,7 @@
   - Commit dependency cleanup with descriptive message
   - _Requirements: 4.1, 4.4, 5.1, 5.2_
 
-- [ ] 9. Evaluate Tauri infrastructure directories
+- [x] 9. Evaluate Tauri infrastructure directories
   - Analyze capabilities/, gen/, and icons/ directories for current relevance
   - Determine if these directories are needed for current native Rust implementation
   - Remove unused Tauri-specific files if migration to native Rust is complete
