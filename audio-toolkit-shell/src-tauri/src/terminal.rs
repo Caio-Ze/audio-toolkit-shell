@@ -28,6 +28,8 @@
 use eframe::egui;
 use unicode_width::UnicodeWidthChar;
 use crate::theme::{CatppuccinTheme, ansi_256_to_rgb};
+use std::fs::OpenOptions;
+use std::io::Write;
 
 /// Represents different states of ANSI parameters during parsing
 /// 
@@ -115,6 +117,8 @@ pub struct TerminalEmulator {
     ansi_sequence_buffer: String,
     /// State machine for ANSI sequence processing
     ansi_state: AnsiState,
+    /// Debug logging enabled flag
+    debug_logging: bool,
 }
 
 impl TerminalEmulator {
@@ -146,6 +150,7 @@ impl TerminalEmulator {
             cursor_recently_positioned: false,
             ansi_sequence_buffer: String::new(),
             ansi_state: AnsiState::Normal,
+            debug_logging: false,
         }
     }
 
@@ -344,12 +349,21 @@ impl TerminalEmulator {
             return;
         }
         
+        // Debug log character writing
+        if !ch.is_whitespace() {
+            self.debug_log(&format!("WRITE_CHAR: '{}' at ({},{})", ch, self.cursor_row, self.cursor_col));
+        }
+        
         // If cursor was recently positioned, clear additional area to prevent contamination
         if self.cursor_recently_positioned && !ch.is_whitespace() {
+            self.debug_log("CLEARING after cursor positioning");
             // Clear more characters ahead when writing the first character after positioning
             // With atomic processing, we can be more aggressive about clearing
             self.clear_cursor_area(10);
             self.cursor_recently_positioned = false;
+            
+            // Log buffer state after clearing
+            self.debug_log_buffer_state("AFTER_CLEAR", None, 0, 20);
         }
         
         // Calculate character width with error handling
@@ -504,6 +518,9 @@ impl TerminalEmulator {
             return;
         }
         
+        // Debug log the incoming data
+        self.debug_log(&format!("PROCESSING: '{}'", data.replace('\x1b', "\\x1b")));
+        
         for ch in data.chars() {
             self.process_char_atomic(ch);
         }
@@ -594,7 +611,17 @@ impl TerminalEmulator {
         if !self.ansi_sequence_buffer.is_empty() {
             // Clone the buffer to avoid borrowing issues
             let sequence = self.ansi_sequence_buffer.clone();
+            
+            // Debug log the complete sequence
+            self.debug_log(&format!("ANSI_SEQUENCE: '\\x1b[{}'", sequence));
+            
+            // Log buffer state before processing
+            self.debug_log_buffer_state("BEFORE_ANSI", None, 0, 20);
+            
             self.handle_ansi_sequence(&sequence);
+            
+            // Log buffer state after processing
+            self.debug_log_buffer_state("AFTER_ANSI", None, 0, 20);
         }
         
         // Clear the buffer for next sequence
@@ -624,6 +651,100 @@ impl TerminalEmulator {
         // Write each character
         for ch in text.chars() {
             self.write_char(ch);
+        }
+    }
+
+    /// Enables debug logging to file
+    /// 
+    /// This method enables internal debugging that writes to a file instead of stdout
+    /// to avoid interfering with terminal layout. Useful for tracking ANSI sequences
+    /// and cursor movements that might cause text contamination.
+    pub fn enable_debug_logging(&mut self) {
+        self.debug_logging = true;
+        // Clear the debug log file first
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open("terminal_debug.log")
+        {
+            let _ = writeln!(file, "=== Terminal Debug Logging Session Started ===");
+        }
+        self.debug_log("=== Terminal Debug Logging Enabled ===");
+    }
+
+    /// Disables debug logging
+    pub fn disable_debug_logging(&mut self) {
+        if self.debug_logging {
+            self.debug_log("=== Terminal Debug Logging Disabled ===");
+        }
+        self.debug_logging = false;
+    }
+
+    /// Writes a debug message to file without interfering with terminal output
+    /// 
+    /// This method logs debug information to a file to help track ANSI sequences
+    /// and cursor movements that might cause text contamination issues.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `message` - The debug message to log
+    fn debug_log(&self, message: &str) {
+        if !self.debug_logging {
+            return;
+        }
+
+        // Write to debug file without interfering with terminal output
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("terminal_debug.log")
+        {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            
+            let cursor_info = format!("cursor:({},{})", self.cursor_row, self.cursor_col);
+            let state_info = format!("state:{:?}", self.ansi_state);
+            
+            if let Err(_) = writeln!(file, "[{}] {} | {} | {}", 
+                timestamp, cursor_info, state_info, message) {
+                // Silently ignore write errors to avoid disrupting terminal operation
+            }
+        }
+    }
+
+    /// Logs buffer state for debugging contamination issues
+    /// 
+    /// This method captures the current state of specific buffer areas
+    /// to help identify when and where text contamination occurs.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `context` - Context description for the log entry
+    /// * `row` - Row to examine (optional, defaults to current cursor row)
+    /// * `start_col` - Starting column to examine
+    /// * `length` - Number of characters to examine
+    fn debug_log_buffer_state(&self, context: &str, row: Option<usize>, start_col: usize, length: usize) {
+        if !self.debug_logging {
+            return;
+        }
+
+        let target_row = row.unwrap_or(self.cursor_row);
+        if target_row >= self.rows {
+            return;
+        }
+
+        if let Some(buffer_row) = self.buffer.get(target_row) {
+            let end_col = (start_col + length).min(self.cols).min(buffer_row.len());
+            let text: String = buffer_row[start_col..end_col]
+                .iter()
+                .map(|cell| cell.character)
+                .collect();
+            
+            self.debug_log(&format!("{} | row:{} cols:{}..{} | text:'{}'", 
+                context, target_row, start_col, end_col - 1, text));
         }
     }
 
@@ -675,6 +796,7 @@ impl TerminalEmulator {
                 
                 // Use buffer clearing cursor positioning to prevent text contamination
                 // Clear a larger area (30 characters) since we now have atomic processing
+                self.debug_log(&format!("CURSOR_POSITION: moving to ({},{}) and clearing 30 chars", clamped_row, clamped_col));
                 self.move_cursor_and_clear(clamped_row, clamped_col, 30);
             }
             'A' => {
@@ -1342,6 +1464,51 @@ mod tests {
         
         // Should contain the correct text
         assert!(full_line.contains("Status: MONITORING"));
+    }
+
+    #[test]
+    fn test_debug_logging() {
+        let mut terminal = TerminalEmulator::new(3, 20);
+        
+        // Enable debug logging
+        terminal.enable_debug_logging();
+        
+        // Process some data that should be logged
+        terminal.process_ansi_data("Test\x1b[2;1HDebug");
+        
+        // Disable debug logging
+        terminal.disable_debug_logging();
+        
+        // Check that debug file was created (we can't easily test content in unit tests)
+        // This test mainly verifies the logging methods don't crash
+        assert!(terminal.debug_logging == false);
+    }
+
+    #[test]
+    fn test_contamination_scenario_with_debug() {
+        let mut terminal = TerminalEmulator::new(5, 50);
+        
+        // Enable debug logging for this specific test
+        terminal.enable_debug_logging();
+        
+        // Simulate the exact scenario from the bug report
+        terminal.process_ansi_data("WINDOWN.app");
+        terminal.process_ansi_data("\x1b[2;1HStatus: MONITORING");
+        
+        // Check the result
+        let status_line = &terminal.buffer[1];
+        let status_text: String = status_line.iter()
+            .take(19)
+            .map(|cell| cell.character)
+            .collect();
+        
+        // This should help us debug what's happening
+        terminal.debug_log(&format!("FINAL_RESULT: '{}'", status_text));
+        
+        terminal.disable_debug_logging();
+        
+        // The test passes regardless - we're mainly interested in the debug output
+        assert!(!status_text.is_empty());
     }
 
     #[test]
