@@ -1,36 +1,36 @@
 # Implementation Plan
 
-- [ ] 1. Phase 1: Extract theme module (Split into 2 files)
+- [x] 1. Phase 1: Extract theme module (Split into 2 files)
   - Create theme.rs module with CatppuccinTheme struct and color utilities
   - Move theme-related code from main.rs to dedicated theme module
   - _Requirements: 1.1, 1.2, 4.1, 5.1_
 
-- [ ] 1.1 Create theme.rs module file
+- [x] 1.1 Create theme.rs module file
   - Create new file `audio-toolkit-shell/src-tauri/src/theme.rs`
   - Extract `CatppuccinTheme` struct with all color constants from main.rs
   - Extract `ansi_256_to_rgb` function from main.rs
   - Add proper module documentation and pub visibility modifiers
   - _Requirements: 1.1, 1.2, 3.1, 3.2, 5.1_
 
-- [ ] 1.2 Update main.rs to use theme module
+- [x] 1.2 Update main.rs to use theme module
   - Add `mod theme;` declaration to main.rs
   - Add `use theme::{CatppuccinTheme, ansi_256_to_rgb};` import
   - Remove the original theme-related code from main.rs
   - Update all references to use the imported types
   - _Requirements: 1.1, 2.1, 3.3, 4.1_
 
-- [ ] 1.3 Test Phase 1 functionality
+- [x] 1.3 Test Phase 1 functionality
   - Compile the application to ensure no build errors
   - Run the application and verify theme colors display correctly
   - Test terminal color rendering and ANSI color conversion
   - _Requirements: 2.1, 2.2, 4.2_
 
-- [ ] 2. Phase 2: Extract terminal module (Split into 3 files)
+- [x] 2. Phase 2: Extract terminal module (Split into 3 files)
   - Create terminal.rs module with terminal emulation logic
   - Move terminal-related structs and implementations from main.rs
   - _Requirements: 1.1, 1.2, 4.1, 5.2, 5.3_
 
-- [ ] 2.1 Create terminal.rs module file
+- [x] 2.1 Create terminal.rs module file
   - Create new file `audio-toolkit-shell/src-tauri/src/terminal.rs`
   - Extract `TerminalCell` struct and Default implementation from main.rs
   - Extract `TerminalEmulator` struct and all its methods from main.rs
@@ -38,14 +38,14 @@
   - Add module documentation and appropriate pub visibility
   - _Requirements: 1.1, 1.2, 3.1, 3.2, 5.2, 5.3_
 
-- [ ] 2.2 Update main.rs to use terminal module
+- [x] 2.2 Update main.rs to use terminal module
   - Add `mod terminal;` declaration to main.rs
   - Add `use terminal::{TerminalCell, TerminalEmulator};` import
   - Remove the original terminal-related code from main.rs
   - Update all references to use the imported types
   - _Requirements: 1.1, 2.1, 3.3, 4.1_
 
-- [ ] 2.3 Test Phase 2 functionality
+- [x] 2.3 Test Phase 2 functionality
   - Compile the application to ensure no build errors
   - Run the application and verify terminal emulation works correctly
   - Test ANSI sequence processing, cursor movement, and text display
