@@ -1512,6 +1512,214 @@ mod tests {
     }
 
     #[test]
+    fn test_validation_status_monitoring_appears_correctly() {
+        let mut terminal = TerminalEmulator::new(10, 80);
+        
+        // Test requirement: "Status: MONITORING" appears correctly without contamination
+        terminal.process_ansi_data("Some initial text");
+        terminal.process_ansi_data("\x1b[2;1HStatus: MONITORING");
+        
+        // Verify the status line is exactly correct
+        let status_line = &terminal.buffer[1];
+        let status_text: String = status_line.iter()
+            .take(18)
+            .map(|cell| cell.character)
+            .collect();
+        
+        assert_eq!(status_text, "Status: MONITORING");
+        
+        // Verify no contamination patterns
+        let full_line: String = status_line.iter()
+            .take(80)
+            .map(|cell| cell.character)
+            .collect();
+        
+        assert!(!full_line.contains("OWN.app"));
+        assert!(!full_line.contains("WN.app"));
+        assert!(!full_line.contains("WINDOWN"));
+        assert!(!full_line.contains("MONITORINGOWN"));
+    }
+
+    #[test]
+    fn test_validation_windown_app_stays_in_scripts_section() {
+        let mut terminal = TerminalEmulator::new(10, 80);
+        
+        // Test requirement: "WINDOWN.app" stays in Scripts section where it belongs
+        // Simulate writing WINDOWN.app in scripts section (line 5)
+        terminal.process_ansi_data("\x1b[5;1HWINDOWN.app");
+        
+        // Then write status on different line
+        terminal.process_ansi_data("\x1b[2;1HStatus: MONITORING");
+        
+        // Verify WINDOWN.app is still in its correct location (line 5)
+        let scripts_line = &terminal.buffer[4]; // 5-1 = 4 (0-based)
+        let scripts_text: String = scripts_line.iter()
+            .take(12)
+            .map(|cell| cell.character)
+            .collect();
+        
+        assert_eq!(scripts_text, "WINDOWN.app ");
+        
+        // Verify status line is clean
+        let status_line = &terminal.buffer[1]; // 2-1 = 1 (0-based)
+        let status_text: String = status_line.iter()
+            .take(18)
+            .map(|cell| cell.character)
+            .collect();
+        
+        assert_eq!(status_text, "Status: MONITORING");
+    }
+
+    #[test]
+    fn test_validation_no_regression_in_terminal_functionality() {
+        let mut terminal = TerminalEmulator::new(10, 80);
+        
+        // Test requirement: No regression in other terminal functionality
+        
+        // Test basic text writing
+        terminal.process_ansi_data("Hello World");
+        assert_eq!(terminal.buffer[0][0].character, 'H');
+        assert_eq!(terminal.buffer[0][10].character, 'd');
+        
+        // Test cursor movement
+        terminal.process_ansi_data("\x1b[3;5H");
+        assert_eq!(terminal.cursor_row, 2); // 3-1
+        assert_eq!(terminal.cursor_col, 4); // 5-1
+        
+        // Test colors
+        terminal.process_ansi_data("\x1b[31mRed Text\x1b[0m");
+        assert_eq!(terminal.current_color, CatppuccinTheme::FRAPPE.text); // Reset
+        
+        // Test screen clearing
+        terminal.process_ansi_data("\x1b[2J");
+        assert_eq!(terminal.buffer[0][0].character, ' ');
+        assert_eq!(terminal.cursor_row, 0);
+        assert_eq!(terminal.cursor_col, 0);
+        
+        // Test newlines and carriage returns
+        terminal.process_ansi_data("Line1\nLine2\rOverwrite");
+        assert_eq!(terminal.buffer[1][0].character, 'O'); // Overwrite at start of line 2
+    }
+
+    #[test]
+    fn test_validation_various_ansi_sequences_robustness() {
+        let mut terminal = TerminalEmulator::new(10, 80);
+        
+        // Test requirement: Robustness with various ANSI sequences
+        
+        // Test edge case sequences that might cause overlap
+        terminal.process_ansi_data("\x1b[;H"); // Empty parameters
+        terminal.process_ansi_data("\x1b[1;H"); // Missing column
+        terminal.process_ansi_data("\x1b[;1H"); // Missing row
+        terminal.process_ansi_data("\x1b[999;999H"); // Out of bounds
+        
+        // Test malformed sequences
+        terminal.process_ansi_data("\x1b[abcH"); // Invalid parameters
+        terminal.process_ansi_data("\x1b[1;2;3;4H"); // Too many parameters
+        
+        // Test mixed content
+        terminal.process_ansi_data("Text\x1b[2;1HMore\x1b[3;1HText");
+        
+        // Verify terminal is still functional
+        assert_eq!(terminal.buffer[1][0].character, 'M');
+        assert_eq!(terminal.buffer[2][0].character, 'T');
+        
+        // Verify no crashes or corruption
+        assert_eq!(terminal.rows, 10);
+        assert_eq!(terminal.cols, 80);
+        assert!(terminal.cursor_row < terminal.rows);
+        assert!(terminal.cursor_col < terminal.cols);
+    }
+
+    #[test]
+    fn test_validation_comprehensive_contamination_scenarios() {
+        let mut terminal = TerminalEmulator::new(15, 100);
+        
+        // Test comprehensive contamination scenarios that could occur in real usage
+        
+        // Scenario 1: Multiple overlapping writes
+        terminal.process_ansi_data("CONTAMINATION_SOURCE_TEXT");
+        terminal.process_ansi_data("\x1b[2;1HStatus: MONITORING");
+        terminal.process_ansi_data("\x1b[3;1HPTSL: Connecting...");
+        terminal.process_ansi_data("\x1b[4;1HSession: Connected");
+        
+        // Verify each line is clean
+        let lines = [
+            ("Status: MONITORING", 1),
+            ("PTSL: Connecting...", 2),
+            ("Session: Connected", 3),
+        ];
+        
+        for (expected_text, line_idx) in lines.iter() {
+            let line = &terminal.buffer[*line_idx];
+            let actual_text: String = line.iter()
+                .take(expected_text.len())
+                .map(|cell| cell.character)
+                .collect();
+            
+            assert_eq!(actual_text, *expected_text);
+            
+            // Verify no contamination from CONTAMINATION_SOURCE_TEXT
+            let full_line: String = line.iter()
+                .take(50)
+                .map(|cell| cell.character)
+                .collect();
+            
+            assert!(!full_line.contains("CONTAMINATION"));
+            assert!(!full_line.contains("SOURCE"));
+        }
+        
+        // Scenario 2: Rapid cursor movements
+        for i in 0..10 {
+            terminal.process_ansi_data(&format!("\x1b[{};1HLine{}", i + 5, i));
+        }
+        
+        // Verify each line is correct
+        for i in 0..10 {
+            let line = &terminal.buffer[i + 4]; // 5-1 = 4 base
+            let expected = format!("Line{}", i);
+            let actual: String = line.iter()
+                .take(expected.len())
+                .map(|cell| cell.character)
+                .collect();
+            
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_validation_performance_no_degradation() {
+        let mut terminal = TerminalEmulator::new(50, 200);
+        
+        // Test that our improvements don't significantly degrade performance
+        let start = std::time::Instant::now();
+        
+        // Process a large amount of data with many ANSI sequences
+        for i in 0..1000 {
+            terminal.process_ansi_data(&format!("\x1b[{};1HLine {} with some text", 
+                (i % 50) + 1, i));
+        }
+        
+        let duration = start.elapsed();
+        
+        // Should complete within reasonable time (adjust threshold as needed)
+        assert!(duration.as_millis() < 1000, "Processing took too long: {:?}", duration);
+        
+        // Verify terminal is still functional
+        assert_eq!(terminal.rows, 50);
+        assert_eq!(terminal.cols, 200);
+        
+        // Verify last write was successful
+        let last_line = &terminal.buffer[49]; // Line 50 (0-based: 49)
+        let text: String = last_line.iter()
+            .take(20)
+            .map(|cell| cell.character)
+            .collect();
+        
+        assert!(text.contains("Line 999"));
+    }
+
+    #[test]
     fn test_terminal_emulator_basic_properties() {
         let terminal = TerminalEmulator::new(24, 80);
         assert_eq!(terminal.cursor_row, 0);
