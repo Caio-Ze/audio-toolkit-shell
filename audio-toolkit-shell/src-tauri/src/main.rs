@@ -3,8 +3,7 @@
 
 use eframe::{egui, App, Frame};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use serde::{Deserialize, Serialize};
-use std::fs;
+
 use std::io::{Read, Write};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 use std::thread;
@@ -12,8 +11,10 @@ use std::thread;
 
 mod theme;
 mod terminal;
+mod config;
 use theme::CatppuccinTheme;
 use terminal::{TerminalCell, TerminalEmulator};
+use config::{AppConfig, TabConfig, load_config};
 
 
 
@@ -23,64 +24,7 @@ use terminal::{TerminalCell, TerminalEmulator};
 
 
 
-#[derive(Debug, Deserialize, Serialize)]
-struct AppConfig {
-    app: AppSettings,
-    tabs: Vec<TabConfig>,
-}
 
-#[derive(Debug, Deserialize, Serialize)]
-struct AppSettings {
-    name: String,
-    window_width: f32,
-    window_height: f32,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-struct TabConfig {
-    title: String,
-    command: String,
-    auto_restart_on_success: bool,
-    success_patterns: Vec<String>,
-}
-
-fn load_config() -> AppConfig {
-    let config_path = "config.toml";
-    match fs::read_to_string(config_path) {
-        Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
-            eprintln!("Error parsing config.toml: {}", e);
-            default_config()
-        }),
-        Err(_) => {
-            eprintln!("config.toml not found, using default configuration");
-            default_config()
-        }
-    }
-}
-
-fn default_config() -> AppConfig {
-    AppConfig {
-        app: AppSettings {
-            name: "Audio Toolkit Shell".to_string(),
-            window_width: 1280.0,
-            window_height: 720.0,
-        },
-        tabs: vec![
-            TabConfig {
-                title: "Terminal 1".to_string(),
-                command: "bash".to_string(),
-                auto_restart_on_success: false,
-                success_patterns: vec![],
-            },
-            TabConfig {
-                title: "Terminal 2".to_string(),
-                command: "bash".to_string(),
-                auto_restart_on_success: false,
-                success_patterns: vec![],
-            },
-        ],
-    }
-}
 
 fn main() -> Result<(), eframe::Error> {
     let config = load_config();

@@ -52,12 +52,12 @@
   - Test emoji and wide character handling
   - _Requirements: 2.1, 2.2, 4.2_
 
-- [ ] 3. Phase 3: Extract configuration module (Split into 4 files)
+- [x] 3. Phase 3: Extract configuration module (Split into 4 files)
   - Create config.rs module with configuration management
   - Move configuration structs and loading logic from main.rs
   - _Requirements: 1.1, 1.2, 4.1, 5.4_
 
-- [ ] 3.1 Create config.rs module file
+- [x] 3.1 Create config.rs module file
   - Create new file `audio-toolkit-shell/src-tauri/src/config.rs`
   - Extract `AppConfig`, `AppSettings`, and `TabConfig` structs from main.rs
   - Extract `load_config()` and `default_config()` functions from main.rs
@@ -65,14 +65,14 @@
   - Add module documentation and pub visibility modifiers
   - _Requirements: 1.1, 1.2, 3.1, 3.2, 5.4_
 
-- [ ] 3.2 Update main.rs to use config module
+- [x] 3.2 Update main.rs to use config module
   - Add `mod config;` declaration to main.rs
   - Add `use config::{AppConfig, load_config};` import
   - Remove the original configuration-related code from main.rs
   - Update all references to use the imported types and functions
   - _Requirements: 1.1, 2.1, 3.3, 4.1_
 
-- [ ] 3.3 Test Phase 3 functionality
+- [x] 3.3 Test Phase 3 functionality
   - Compile the application to ensure no build errors
   - Run the application and verify configuration loading works
   - Test with both existing config.toml and default configuration fallback
