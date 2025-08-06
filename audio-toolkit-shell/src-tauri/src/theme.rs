@@ -2,6 +2,29 @@
 //! 
 //! This module provides the Catppuccin Frappé color theme for the Audio Toolkit Shell.
 //! It includes the complete color palette and utility functions for color conversion.
+//! 
+//! ## Usage
+//! 
+//! ```rust
+//! use crate::theme::{CatppuccinTheme, ansi_256_to_rgb};
+//! 
+//! // Access theme colors
+//! let theme = CatppuccinTheme::FRAPPE;
+//! let background_color = theme.base;
+//! let text_color = theme.text;
+//! 
+//! // Convert ANSI colors
+//! let red_color = ansi_256_to_rgb(1); // ANSI red -> Catppuccin red
+//! ```
+//! 
+//! ## Color Palette
+//! 
+//! The Catppuccin Frappé theme provides a carefully crafted color palette with:
+//! - **Base colors**: For backgrounds and surfaces (base, mantle, crust)
+//! - **Text colors**: For text hierarchy (text, subtext1, subtext0)
+//! - **Surface colors**: For UI elevation (surface0, surface1, surface2)
+//! - **Overlay colors**: For overlays and disabled states
+//! - **Accent colors**: For semantic meaning and visual interest
 
 use eframe::egui;
 
@@ -82,6 +105,15 @@ impl CatppuccinTheme {
     /// 
     /// This constant provides immediate access to all Catppuccin Frappé colors
     /// without any runtime initialization overhead.
+    /// 
+    /// # Example
+    /// 
+    /// ```rust
+    /// let theme = CatppuccinTheme::FRAPPE;
+    /// let bg_color = theme.base;      // Main background
+    /// let fg_color = theme.text;      // Primary text
+    /// let accent = theme.blue;        // Blue accent color
+    /// ```
     pub const FRAPPE: Self = Self {
         // Base colors
         base: egui::Color32::from_rgb(0x30, 0x34, 0x46),      // #303446
@@ -126,6 +158,9 @@ impl CatppuccinTheme {
 /// Converts ANSI 256-color codes to RGB values, using Catppuccin Frappé colors
 /// for the standard 16 colors (0-15) and standard color cube/grayscale for the rest.
 /// 
+/// This function ensures that terminal colors are consistently themed with the
+/// Catppuccin palette while maintaining compatibility with standard ANSI color codes.
+/// 
 /// # Arguments
 /// 
 /// * `color_index` - The ANSI color index (0-255)
@@ -133,6 +168,14 @@ impl CatppuccinTheme {
 /// # Returns
 /// 
 /// An `egui::Color32` representing the RGB color
+/// 
+/// # Example
+/// 
+/// ```rust
+/// let red = ansi_256_to_rgb(1);    // ANSI red -> Catppuccin red
+/// let green = ansi_256_to_rgb(2);  // ANSI green -> Catppuccin green
+/// let custom = ansi_256_to_rgb(196); // 256-color red
+/// ```
 pub fn ansi_256_to_rgb(color_index: u8) -> egui::Color32 {
     // Use Catppuccin Frappé theme for standard colors (0-15)
     const THEME: &CatppuccinTheme = &CatppuccinTheme::FRAPPE;
@@ -170,5 +213,85 @@ pub fn ansi_256_to_rgb(color_index: u8) -> egui::Color32 {
             let gray = 8 + (color_index - 232) * 10;
             egui::Color32::from_rgb(gray, gray, gray)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_theme_colors_are_defined() {
+        let theme = CatppuccinTheme::FRAPPE;
+        
+        // Test that all colors are properly defined (not transparent/black)
+        assert_ne!(theme.base, egui::Color32::TRANSPARENT);
+        assert_ne!(theme.text, egui::Color32::TRANSPARENT);
+        assert_ne!(theme.red, egui::Color32::TRANSPARENT);
+        assert_ne!(theme.green, egui::Color32::TRANSPARENT);
+        assert_ne!(theme.blue, egui::Color32::TRANSPARENT);
+    }
+
+    #[test]
+    fn test_ansi_standard_colors() {
+        // Test standard ANSI colors (0-15) map to Catppuccin colors
+        let theme = CatppuccinTheme::FRAPPE;
+        
+        assert_eq!(ansi_256_to_rgb(0), theme.surface1);  // Black
+        assert_eq!(ansi_256_to_rgb(1), theme.red);       // Red
+        assert_eq!(ansi_256_to_rgb(2), theme.green);     // Green
+        assert_eq!(ansi_256_to_rgb(3), theme.yellow);    // Yellow
+        assert_eq!(ansi_256_to_rgb(4), theme.blue);      // Blue
+        assert_eq!(ansi_256_to_rgb(5), theme.mauve);     // Magenta
+        assert_eq!(ansi_256_to_rgb(6), theme.teal);      // Cyan
+        assert_eq!(ansi_256_to_rgb(7), theme.subtext1);  // White
+        assert_eq!(ansi_256_to_rgb(15), theme.text);     // Bright White
+    }
+
+    #[test]
+    fn test_ansi_256_color_cube() {
+        // Test 216-color cube (16-231)
+        let color_16 = ansi_256_to_rgb(16);  // First color in cube
+        let color_231 = ansi_256_to_rgb(231); // Last color in cube
+        
+        // These should not be transparent and should be different
+        assert_ne!(color_16, egui::Color32::TRANSPARENT);
+        assert_ne!(color_231, egui::Color32::TRANSPARENT);
+        assert_ne!(color_16, color_231);
+    }
+
+    #[test]
+    fn test_ansi_grayscale() {
+        // Test grayscale colors (232-255)
+        let gray_start = ansi_256_to_rgb(232);
+        let gray_end = ansi_256_to_rgb(255);
+        
+        // Should be different shades of gray
+        assert_ne!(gray_start, gray_end);
+        assert_ne!(gray_start, egui::Color32::TRANSPARENT);
+        assert_ne!(gray_end, egui::Color32::TRANSPARENT);
+    }
+
+    #[test]
+    fn test_color_consistency() {
+        // Test that bright colors map to the same Catppuccin colors as dark colors
+        assert_eq!(ansi_256_to_rgb(1), ansi_256_to_rgb(9));   // Red
+        assert_eq!(ansi_256_to_rgb(2), ansi_256_to_rgb(10));  // Green
+        assert_eq!(ansi_256_to_rgb(3), ansi_256_to_rgb(11));  // Yellow
+        assert_eq!(ansi_256_to_rgb(4), ansi_256_to_rgb(12));  // Blue
+        assert_eq!(ansi_256_to_rgb(5), ansi_256_to_rgb(13));  // Magenta
+        assert_eq!(ansi_256_to_rgb(6), ansi_256_to_rgb(14));  // Cyan
+    }
+
+    #[test]
+    fn test_theme_struct_properties() {
+        let theme = CatppuccinTheme::FRAPPE;
+        
+        // Test that the theme can be cloned and copied
+        let theme_copy = theme;
+        let theme_clone = theme.clone();
+        
+        assert_eq!(theme.base, theme_copy.base);
+        assert_eq!(theme.text, theme_clone.text);
     }
 }

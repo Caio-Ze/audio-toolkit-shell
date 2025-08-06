@@ -2,6 +2,28 @@
 //! 
 //! This module provides terminal emulation functionality including ANSI sequence processing,
 //! character rendering, and terminal buffer management.
+//! 
+//! ## Features
+//! 
+//! - **ANSI Sequence Processing**: Full support for cursor movement, colors, and text formatting
+//! - **Unicode Support**: Proper handling of wide characters and emojis
+//! - **Buffer Management**: Efficient 2D character buffer with scrolling
+//! - **Color Support**: 256-color ANSI support with Catppuccin theming
+//! 
+//! ## Usage
+//! 
+//! ```rust
+//! use crate::terminal::{TerminalEmulator, TerminalCell};
+//! 
+//! // Create a new terminal emulator
+//! let mut terminal = TerminalEmulator::new(24, 80);
+//! 
+//! // Process terminal data with ANSI sequences
+//! terminal.process_ansi_data("Hello \x1b[31mWorld\x1b[0m\n");
+//! 
+//! // Access the terminal buffer for rendering
+//! let buffer = &terminal.buffer;
+//! ```
 
 use eframe::egui;
 use unicode_width::UnicodeWidthChar;
@@ -10,6 +32,14 @@ use crate::theme::{CatppuccinTheme, ansi_256_to_rgb};
 /// Represents a single character cell in the terminal buffer
 /// 
 /// Each cell contains a character, its display color, and formatting information.
+/// This is the fundamental unit of the terminal display, allowing for rich text
+/// rendering with colors and formatting attributes.
+/// 
+/// # Fields
+/// 
+/// * `character` - The Unicode character to display
+/// * `color` - The foreground color for the character
+/// * `bold` - Whether the character should be rendered in bold
 #[derive(Clone)]
 pub struct TerminalCell {
     pub character: char,
@@ -31,6 +61,14 @@ impl Default for TerminalCell {
 /// 
 /// This struct manages a 2D buffer of terminal cells and processes ANSI escape sequences
 /// to provide terminal-like functionality including cursor movement, colors, and text formatting.
+/// 
+/// The emulator supports:
+/// - Cursor positioning and movement
+/// - Text colors (16-color, 256-color ANSI)
+/// - Text formatting (bold)
+/// - Screen clearing and line clearing
+/// - Unicode character support including emojis
+/// - Automatic scrolling when content exceeds buffer size
 #[derive(Clone)]
 pub struct TerminalEmulator {
     pub buffer: Vec<Vec<TerminalCell>>,
@@ -45,10 +83,19 @@ pub struct TerminalEmulator {
 impl TerminalEmulator {
     /// Creates a new terminal emulator with the specified dimensions
     /// 
+    /// Initializes a new terminal emulator with a blank buffer of the specified size.
+    /// The cursor starts at position (0, 0) and uses the default Catppuccin text color.
+    /// 
     /// # Arguments
     /// 
-    /// * `rows` - Number of rows in the terminal buffer
-    /// * `cols` - Number of columns in the terminal buffer
+    /// * `rows` - Number of rows in the terminal buffer (typically 24)
+    /// * `cols` - Number of columns in the terminal buffer (typically 80)
+    /// 
+    /// # Example
+    /// 
+    /// ```rust
+    /// let terminal = TerminalEmulator::new(24, 80);
+    /// ```
     pub fn new(rows: usize, cols: usize) -> Self {
         let buffer = vec![vec![TerminalCell::default(); cols]; rows];
         Self {
@@ -63,6 +110,9 @@ impl TerminalEmulator {
     }
 
     /// Clears the entire terminal screen and resets cursor to top-left
+    /// 
+    /// Fills all cells in the buffer with default empty cells (space character
+    /// with default color) and moves the cursor to position (0, 0).
     pub fn clear_screen(&mut self) {
         for row in &mut self.buffer {
             for cell in row {
@@ -75,10 +125,13 @@ impl TerminalEmulator {
 
     /// Moves the cursor to the specified position
     /// 
+    /// Positions are clamped to valid buffer bounds to prevent out-of-bounds access.
+    /// The cursor position affects where new characters will be written.
+    /// 
     /// # Arguments
     /// 
-    /// * `row` - Target row (0-based)
-    /// * `col` - Target column (0-based)
+    /// * `row` - Target row (0-based, clamped to buffer height)
+    /// * `col` - Target column (0-based, clamped to buffer width)
     pub fn move_cursor(&mut self, row: usize, col: usize) {
         // Defensive programming: ensure buffer dimensions are valid
         if self.rows == 0 || self.cols == 0 {
@@ -629,5 +682,317 @@ impl TerminalEmulator {
             }
             i += 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_terminal_cell_default() {
+        let cell = TerminalCell::default();
+        assert_eq!(cell.character, ' ');
+        assert_eq!(cell.color, CatppuccinTheme::FRAPPE.text);
+        assert!(!cell.bold);
+    }
+
+    #[test]
+    fn test_terminal_emulator_new() {
+        let terminal = TerminalEmulator::new(24, 80);
+        assert_eq!(terminal.buffer.len(), 24);
+        assert_eq!(terminal.buffer[0].len(), 80);
+        assert_eq!(terminal.cursor_row, 0);
+        assert_eq!(terminal.cursor_col, 0);
+        assert_eq!(terminal.rows, 24);
+        assert_eq!(terminal.cols, 80);
+    }
+
+    #[test]
+    fn test_clear_screen() {
+        let mut terminal = TerminalEmulator::new(3, 3);
+        
+        // Fill with some data
+        terminal.process_ansi_data("Hello");
+        
+        // Clear screen
+        terminal.clear_screen();
+        
+        // Check that all cells are default
+        for row in &terminal.buffer {
+            for cell in row {
+                assert_eq!(cell.character, ' ');
+            }
+        }
+        assert_eq!(terminal.cursor_row, 0);
+        assert_eq!(terminal.cursor_col, 0);
+    }
+
+    #[test]
+    fn test_move_cursor() {
+        let mut terminal = TerminalEmulator::new(10, 10);
+        
+        terminal.move_cursor(5, 7);
+        assert_eq!(terminal.cursor_row, 5);
+        assert_eq!(terminal.cursor_col, 7);
+        
+        // Test bounds clamping
+        terminal.move_cursor(20, 30);
+        assert_eq!(terminal.cursor_row, 9);  // Clamped to rows-1
+        assert_eq!(terminal.cursor_col, 9);  // Clamped to cols-1
+    }
+
+    #[test]
+    fn test_process_simple_text() {
+        let mut terminal = TerminalEmulator::new(5, 10);
+        
+        terminal.process_ansi_data("Hello");
+        
+        assert_eq!(terminal.buffer[0][0].character, 'H');
+        assert_eq!(terminal.buffer[0][1].character, 'e');
+        assert_eq!(terminal.buffer[0][2].character, 'l');
+        assert_eq!(terminal.buffer[0][3].character, 'l');
+        assert_eq!(terminal.buffer[0][4].character, 'o');
+        assert_eq!(terminal.cursor_col, 5);
+    }
+
+    #[test]
+    fn test_process_newline() {
+        let mut terminal = TerminalEmulator::new(5, 10);
+        
+        terminal.process_ansi_data("Hi\nThere");
+        
+        assert_eq!(terminal.buffer[0][0].character, 'H');
+        assert_eq!(terminal.buffer[0][1].character, 'i');
+        assert_eq!(terminal.buffer[1][0].character, 'T');
+        assert_eq!(terminal.buffer[1][1].character, 'h');
+        assert_eq!(terminal.cursor_row, 1);
+        assert_eq!(terminal.cursor_col, 5);
+    }
+
+    #[test]
+    fn test_process_carriage_return() {
+        let mut terminal = TerminalEmulator::new(5, 10);
+        
+        terminal.process_ansi_data("Hello\rWorld");
+        
+        // Should overwrite from beginning of line
+        assert_eq!(terminal.buffer[0][0].character, 'W');
+        assert_eq!(terminal.buffer[0][1].character, 'o');
+        assert_eq!(terminal.buffer[0][2].character, 'r');
+        assert_eq!(terminal.buffer[0][3].character, 'l');
+        assert_eq!(terminal.buffer[0][4].character, 'd');
+        assert_eq!(terminal.cursor_col, 5);
+    }
+
+    #[test]
+    fn test_ansi_cursor_movement() {
+        let mut terminal = TerminalEmulator::new(10, 10);
+        
+        // Move cursor to position (3, 5) - ANSI uses 1-based indexing
+        terminal.process_ansi_data("\x1b[4;6H");
+        assert_eq!(terminal.cursor_row, 3);
+        assert_eq!(terminal.cursor_col, 5);
+        
+        // Move cursor up
+        terminal.process_ansi_data("\x1b[2A");
+        assert_eq!(terminal.cursor_row, 1);
+        
+        // Move cursor down
+        terminal.process_ansi_data("\x1b[3B");
+        assert_eq!(terminal.cursor_row, 4);
+        
+        // Move cursor right
+        terminal.process_ansi_data("\x1b[2C");
+        assert_eq!(terminal.cursor_col, 7);
+        
+        // Move cursor left
+        terminal.process_ansi_data("\x1b[1D");
+        assert_eq!(terminal.cursor_col, 6);
+    }
+
+    #[test]
+    fn test_ansi_colors() {
+        let mut terminal = TerminalEmulator::new(5, 10);
+        
+        // Set red color and write text
+        terminal.process_ansi_data("\x1b[31mRed");
+        
+        assert_eq!(terminal.buffer[0][0].character, 'R');
+        assert_eq!(terminal.buffer[0][0].color, CatppuccinTheme::FRAPPE.red);
+        assert_eq!(terminal.buffer[0][1].color, CatppuccinTheme::FRAPPE.red);
+        assert_eq!(terminal.buffer[0][2].color, CatppuccinTheme::FRAPPE.red);
+    }
+
+    #[test]
+    fn test_ansi_bold() {
+        let mut terminal = TerminalEmulator::new(5, 10);
+        
+        // Set bold and write text
+        terminal.process_ansi_data("\x1b[1mBold");
+        
+        assert_eq!(terminal.buffer[0][0].character, 'B');
+        assert!(terminal.buffer[0][0].bold);
+        assert!(terminal.buffer[0][1].bold);
+        assert!(terminal.buffer[0][2].bold);
+        assert!(terminal.buffer[0][3].bold);
+    }
+
+    #[test]
+    fn test_ansi_reset() {
+        let mut terminal = TerminalEmulator::new(5, 10);
+        
+        // Set red and bold, then reset
+        terminal.process_ansi_data("\x1b[31;1mRed\x1b[0mNormal");
+        
+        assert_eq!(terminal.buffer[0][0].color, CatppuccinTheme::FRAPPE.red);
+        assert!(terminal.buffer[0][0].bold);
+        
+        assert_eq!(terminal.buffer[0][3].color, CatppuccinTheme::FRAPPE.text);
+        assert!(!terminal.buffer[0][3].bold);
+    }
+
+    #[test]
+    fn test_ansi_256_color() {
+        let mut terminal = TerminalEmulator::new(5, 10);
+        
+        // Set 256-color red (color index 196)
+        terminal.process_ansi_data("\x1b[38;5;196mRed");
+        
+        assert_eq!(terminal.buffer[0][0].character, 'R');
+        // Should use the 256-color conversion
+        assert_eq!(terminal.buffer[0][0].color, ansi_256_to_rgb(196));
+    }
+
+    #[test]
+    fn test_ansi_clear_screen() {
+        let mut terminal = TerminalEmulator::new(3, 3);
+        
+        // Fill with data
+        terminal.process_ansi_data("123456789");
+        
+        // Clear entire screen
+        terminal.process_ansi_data("\x1b[2J");
+        
+        // Check all cells are cleared
+        for row in &terminal.buffer {
+            for cell in row {
+                assert_eq!(cell.character, ' ');
+            }
+        }
+    }
+
+    #[test]
+    fn test_ansi_clear_line() {
+        let mut terminal = TerminalEmulator::new(3, 5);
+        
+        // Fill first line
+        terminal.process_ansi_data("ABCDE");
+        terminal.move_cursor(0, 2); // Move to middle of line
+        
+        // Clear from cursor to end of line
+        terminal.process_ansi_data("\x1b[K");
+        
+        assert_eq!(terminal.buffer[0][0].character, 'A');
+        assert_eq!(terminal.buffer[0][1].character, 'B');
+        assert_eq!(terminal.buffer[0][2].character, ' '); // Cleared
+        assert_eq!(terminal.buffer[0][3].character, ' '); // Cleared
+        assert_eq!(terminal.buffer[0][4].character, ' '); // Cleared
+    }
+
+    #[test]
+    fn test_wide_character_handling() {
+        let mut terminal = TerminalEmulator::new(3, 5);
+        
+        // Test emoji (should take 2 columns)
+        terminal.process_ansi_data("A😀B");
+        
+        assert_eq!(terminal.buffer[0][0].character, 'A');
+        assert_eq!(terminal.buffer[0][1].character, '😀');
+        assert_eq!(terminal.buffer[0][2].character, '\0'); // Placeholder
+        assert_eq!(terminal.buffer[0][3].character, 'B');
+        assert_eq!(terminal.cursor_col, 4);
+    }
+
+    #[test]
+    fn test_line_wrapping() {
+        let mut terminal = TerminalEmulator::new(3, 3);
+        
+        // Write more than line width
+        terminal.process_ansi_data("ABCDEF");
+        
+        // Should wrap to next line
+        assert_eq!(terminal.buffer[0][0].character, 'A');
+        assert_eq!(terminal.buffer[0][1].character, 'B');
+        assert_eq!(terminal.buffer[0][2].character, 'C');
+        assert_eq!(terminal.buffer[1][0].character, 'D');
+        assert_eq!(terminal.buffer[1][1].character, 'E');
+        assert_eq!(terminal.buffer[1][2].character, 'F');
+    }
+
+    #[test]
+    fn test_scrolling() {
+        let mut terminal = TerminalEmulator::new(2, 3);
+        
+        // Fill the terminal with more content than it can hold
+        terminal.process_ansi_data("ABC\nDEF\nGHI");
+        
+        // The terminal should have scrolled, so the first line "ABC" should be gone
+        // and we should have "DEF" on the first line and "GHI" on the second line
+        assert_eq!(terminal.buffer[0][0].character, 'D');
+        assert_eq!(terminal.buffer[0][1].character, 'E');
+        assert_eq!(terminal.buffer[0][2].character, 'F');
+        assert_eq!(terminal.buffer[1][0].character, 'G');
+        assert_eq!(terminal.buffer[1][1].character, 'H');
+        assert_eq!(terminal.buffer[1][2].character, 'I');
+        
+        // Cursor should be at the end of the last line
+        assert_eq!(terminal.cursor_row, 1);
+        assert_eq!(terminal.cursor_col, 3);
+    }
+
+    #[test]
+    fn test_tab_handling() {
+        let mut terminal = TerminalEmulator::new(3, 16);
+        
+        terminal.process_ansi_data("A\tB");
+        
+        assert_eq!(terminal.buffer[0][0].character, 'A');
+        assert_eq!(terminal.buffer[0][8].character, 'B'); // Tab stops at column 8
+    }
+
+    #[test]
+    fn test_get_char_width() {
+        assert_eq!(TerminalEmulator::get_char_width('A'), 1);
+        assert_eq!(TerminalEmulator::get_char_width('中'), 2); // CJK character
+        assert_eq!(TerminalEmulator::get_char_width('😀'), 2); // Emoji
+        assert_eq!(TerminalEmulator::get_char_width('│'), 1); // Box drawing
+    }
+
+    #[test]
+    fn test_is_emoji_char() {
+        assert!(TerminalEmulator::is_emoji_char('😀')); // Emoticon
+        assert!(TerminalEmulator::is_emoji_char('🚀')); // Transport symbol
+        assert!(TerminalEmulator::is_emoji_char('⭐')); // Star symbol
+        assert!(TerminalEmulator::is_emoji_char('✅')); // Check mark
+        assert!(!TerminalEmulator::is_emoji_char('A')); // Regular ASCII
+        assert!(!TerminalEmulator::is_emoji_char('中')); // CJK but not emoji
+    }
+
+    #[test]
+    fn test_bounds_safety() {
+        let mut terminal = TerminalEmulator::new(2, 2);
+        
+        // Try to move cursor out of bounds
+        terminal.move_cursor(10, 10);
+        assert_eq!(terminal.cursor_row, 1);
+        assert_eq!(terminal.cursor_col, 1);
+        
+        // Try ANSI movement out of bounds
+        terminal.process_ansi_data("\x1b[100A"); // Move up 100 lines
+        assert_eq!(terminal.cursor_row, 0);
+        
+        terminal.process_ansi_data("\x1b[100C"); // Move right 100 columns
+        assert_eq!(terminal.cursor_col, 1);
     }
 }

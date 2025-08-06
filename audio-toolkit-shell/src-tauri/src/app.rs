@@ -2,6 +2,24 @@
 //! 
 //! This module contains the main application logic including terminal tab management,
 //! UI rendering, and application state management.
+//! 
+//! ## Architecture
+//! 
+//! The application uses a dual-pane layout with two terminal tabs displayed side by side.
+//! Each tab runs its own PTY (pseudo-terminal) and can execute different commands.
+//! 
+//! ## Key Components
+//! 
+//! - **TerminalTab**: Manages individual terminal instances with PTY communication
+//! - **AudioToolkitApp**: Main application state and UI rendering logic
+//! 
+//! ## Features
+//! 
+//! - Split-screen terminal interface
+//! - Tab focus switching with Tab key
+//! - Auto-restart functionality based on pattern matching
+//! - Full keyboard input support including arrow keys
+//! - ANSI color rendering with Catppuccin theme
 
 use eframe::{egui, App, Frame};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
@@ -17,15 +35,22 @@ use crate::theme::CatppuccinTheme;
 /// 
 /// Each tab manages its own pseudo-terminal, command execution, and terminal emulator.
 /// Tabs can be configured to auto-restart based on success patterns.
+/// 
+/// The tab handles:
+/// - PTY creation and management
+/// - Command execution with proper environment setup
+/// - Terminal output processing through the emulator
+/// - Pattern-based auto-restart functionality
+/// - Input handling and forwarding to the PTY
 pub struct TerminalTab {
-    pub title: String,
-    pub config: TabConfig,
+    title: String,
+    config: TabConfig,
     pty_master: Box<dyn portable_pty::MasterPty + Send>,
     pty_writer: Option<Box<dyn std::io::Write + Send>>,
     output_rx: Receiver<String>,
     output: String,
-    pub terminal_emulator: TerminalEmulator,
-    pub input: String,
+    terminal_emulator: TerminalEmulator,
+    input: String,
     needs_restart: bool,
     startup_time: std::time::Instant,
     pattern_matches: u32,
@@ -359,6 +384,55 @@ impl TerminalTab {
         println!("[RESTART] Successfully restarted tab: {}", self.title);
     }
 
+    /// Gets the tab title
+    /// 
+    /// # Returns
+    /// 
+    /// A string slice containing the tab's display title
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// Gets a reference to the terminal emulator
+    /// 
+    /// Provides read-only access to the terminal emulator for rendering
+    /// the terminal buffer and accessing terminal state.
+    /// 
+    /// # Returns
+    /// 
+    /// A reference to the terminal emulator instance
+    pub fn terminal_emulator(&self) -> &TerminalEmulator {
+        &self.terminal_emulator
+    }
+
+    /// Gets a mutable reference to the input string
+    /// 
+    /// Used by the UI to allow editing of the current input line.
+    /// 
+    /// # Returns
+    /// 
+    /// A mutable reference to the input string
+    pub fn input_mut(&mut self) -> &mut String {
+        &mut self.input
+    }
+
+    /// Gets the current input string
+    /// 
+    /// # Returns
+    /// 
+    /// A string slice containing the current input text
+    pub fn input(&self) -> &str {
+        &self.input
+    }
+
+    /// Clears the input string
+    /// 
+    /// Typically called after sending input to the PTY to reset
+    /// the input field for the next command.
+    pub fn clear_input(&mut self) {
+        self.input.clear();
+    }
+
     /// Strips ANSI escape codes from text for pattern matching
     /// 
     /// # Arguments
@@ -401,17 +475,28 @@ impl TerminalTab {
 /// Main application struct managing terminal tabs and UI state
 /// 
 /// Handles the overall application state, terminal focus management, and UI rendering.
+/// 
+/// The application implements the `eframe::App` trait to provide the main update loop
+/// and rendering logic. It manages multiple terminal tabs in a split-screen layout
+/// and handles global keyboard shortcuts for tab switching.
 pub struct AudioToolkitApp {
-    pub tabs: Vec<TerminalTab>,
+    tabs: Vec<TerminalTab>,
     focused_terminal: usize, // 0 = left terminal, 1 = right terminal
 }
 
 impl AudioToolkitApp {
     /// Creates a new application instance with the given configuration
     /// 
+    /// Initializes the application by creating terminal tabs based on the provided
+    /// configuration. Each tab gets its own PTY and starts executing its configured command.
+    /// 
     /// # Arguments
     /// 
     /// * `config` - The application configuration containing tab settings
+    /// 
+    /// # Returns
+    /// 
+    /// A new `AudioToolkitApp` instance ready for use with eframe
     pub fn new(config: AppConfig) -> Self {
         let tabs = config.tabs.into_iter().map(TerminalTab::new).collect();
 
@@ -571,7 +656,7 @@ impl App for AudioToolkitApp {
 
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new(format!("{} 🖥️ {}", focus_indicator, tab.title))
+                            egui::RichText::new(format!("{} 🖥️ {}", focus_indicator, tab.title()))
                                 .color(title_color)
                                 .strong(),
                         );
@@ -593,7 +678,7 @@ impl App for AudioToolkitApp {
                             ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
 
                             // Render terminal emulator buffer
-                            Self::render_terminal_buffer(ui, &tab.terminal_emulator.buffer);
+                            Self::render_terminal_buffer(ui, &tab.terminal_emulator().buffer);
                         });
 
                     // Terminal 1 Input Area
@@ -602,7 +687,7 @@ impl App for AudioToolkitApp {
                         .horizontal(|ui| {
                             ui.label("$");
                             ui.add(
-                                egui::TextEdit::singleline(&mut tab.input)
+                                egui::TextEdit::singleline(tab.input_mut())
                                     .font(egui::TextStyle::Monospace)
                                     .desired_width(f32::INFINITY),
                             )
@@ -617,7 +702,7 @@ impl App for AudioToolkitApp {
                     // Handle text input and Enter key
                     if input_response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
                     {
-                        let mut input_with_newline = tab.input.clone();
+                        let mut input_with_newline = tab.input().to_string();
                         input_with_newline.push('\n');
 
                         if let Some(ref mut writer) = tab.pty_writer {
@@ -628,7 +713,7 @@ impl App for AudioToolkitApp {
                             eprintln!("No PTY writer available");
                         }
 
-                        tab.input.clear();
+                        tab.clear_input();
                     }
                 }
             });
@@ -646,7 +731,7 @@ impl App for AudioToolkitApp {
 
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new(format!("{} 🖥️ {}", focus_indicator, tab.title))
+                        egui::RichText::new(format!("{} 🖥️ {}", focus_indicator, tab.title()))
                             .color(title_color)
                             .strong(),
                     );
@@ -668,7 +753,7 @@ impl App for AudioToolkitApp {
                         ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
 
                         // Render terminal emulator buffer
-                        Self::render_terminal_buffer(ui, &tab.terminal_emulator.buffer);
+                        Self::render_terminal_buffer(ui, &tab.terminal_emulator().buffer);
                     });
 
                 // Terminal 2 Input Area
@@ -677,7 +762,7 @@ impl App for AudioToolkitApp {
                     .horizontal(|ui| {
                         ui.label("$");
                         ui.add(
-                            egui::TextEdit::singleline(&mut tab.input)
+                            egui::TextEdit::singleline(tab.input_mut())
                                 .font(egui::TextStyle::Monospace)
                                 .desired_width(f32::INFINITY),
                         )
@@ -691,7 +776,7 @@ impl App for AudioToolkitApp {
 
                 // Handle text input and Enter key
                 if input_response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    let mut input_with_newline = tab.input.clone();
+                    let mut input_with_newline = tab.input().to_string();
                     input_with_newline.push('\n');
 
                     if let Some(ref mut writer) = tab.pty_writer {
@@ -702,7 +787,7 @@ impl App for AudioToolkitApp {
                         eprintln!("No PTY writer available");
                     }
 
-                    tab.input.clear();
+                    tab.clear_input();
                     input_response.request_focus();
                 }
             }
