@@ -113,6 +113,8 @@ pub struct TerminalEmulator {
     bold: bool,
     /// Flag to track if cursor was recently positioned, indicating potential need for clearing
     cursor_recently_positioned: bool,
+    /// If true, the next printable character will wrap to the next line (DEC autowrap semantics)
+    wrap_pending: bool,
     /// Buffer for accumulating partial ANSI sequences to ensure atomic processing
     ansi_sequence_buffer: String,
     /// State machine for ANSI sequence processing
@@ -148,6 +150,7 @@ impl TerminalEmulator {
             current_color: CatppuccinTheme::FRAPPE.text,
             bold: false,
             cursor_recently_positioned: false,
+            wrap_pending: false,
             ansi_sequence_buffer: String::new(),
             ansi_state: AnsiState::Normal,
             debug_logging: false,
@@ -193,6 +196,9 @@ impl TerminalEmulator {
             self.cursor_col = new_col;
         }
         
+        // Moving the cursor cancels any pending wrap
+        self.wrap_pending = false;
+
         // Additional validation to ensure cursor position is within buffer bounds
         self.validate_cursor_position();
     }
@@ -208,15 +214,19 @@ impl TerminalEmulator {
     /// * `row` - Target row (0-based, clamped to buffer height)
     /// * `col` - Target column (0-based, clamped to buffer width)
     /// * `clear_length` - Number of characters to clear from the cursor position
-    pub fn move_cursor_and_clear(&mut self, row: usize, col: usize, clear_length: usize) {
+    pub fn move_cursor_and_clear(&mut self, row: usize, col: usize, _clear_length: usize) {
         // First move the cursor to the target position
         self.move_cursor(row, col);
         
-        // Clear the target area to prevent text contamination
-        self.clear_cursor_area(clear_length);
+        // Clear from cursor to end-of-line to prevent text contamination
+        // Using EOL clear avoids leaving stale characters when new content is shorter
+        self.clear_cursor_area(self.cols);
         
         // Mark that cursor was recently positioned for potential additional clearing
         self.cursor_recently_positioned = true;
+
+        // Clearing implies we're in a clean state; cancel any pending wrap
+        self.wrap_pending = false;
     }
 
     /// Clears a specified number of characters from the current cursor position
@@ -242,6 +252,32 @@ impl TerminalEmulator {
                     *cell = TerminalCell::default();
                 }
             }
+        }
+    }
+
+    /// Returns true if the character is a line/border drawing glyph
+    /// Used to preserve UI borders (e.g., the right-most vertical line) during auto-clears
+    fn is_line_border_char(ch: char) -> bool {
+        // Box Drawing block U+2500..U+257F covers single/heavy lines and junctions
+        (ch >= '\u{2500}' && ch <= '\u{257F}') || ch == '|'
+    }
+
+    /// Clears to end-of-line but preserves the right-most border cell if present
+    /// This avoids erasing vertical frame lines drawn at the last column.
+    fn clear_to_eol_preserving_right_border(&mut self) {
+        if self.cursor_row >= self.rows || self.cols == 0 { return; }
+        let mut preserve_last = false;
+        if let Some(row) = self.buffer.get(self.cursor_row) {
+            if self.cols > 0 {
+                let last_char = row[self.cols - 1].character;
+                preserve_last = Self::is_line_border_char(last_char);
+            }
+        }
+        let start = self.cursor_col.min(self.cols);
+        let total_to_end = self.cols.saturating_sub(start);
+        let len = if preserve_last { total_to_end.saturating_sub(1) } else { total_to_end };
+        if len > 0 {
+            self.clear_cursor_area(len);
         }
     }
 
@@ -357,13 +393,19 @@ impl TerminalEmulator {
         // If cursor was recently positioned, clear additional area to prevent contamination
         if self.cursor_recently_positioned && !ch.is_whitespace() {
             self.debug_log("CLEARING after cursor positioning");
-            // Clear more characters ahead when writing the first character after positioning
-            // With atomic processing, we can be more aggressive about clearing
-            self.clear_cursor_area(10);
+            // Clear to end-of-line while preserving a right-most border cell if present
+            // This prevents erasing vertical frame lines while still avoiding contamination
+            self.clear_to_eol_preserving_right_border();
             self.cursor_recently_positioned = false;
             
             // Log buffer state after clearing
             self.debug_log_buffer_state("AFTER_CLEAR", None, 0, 20);
+        }
+
+        // Perform pending autowrap before printing next character (DEC autowrap semantics)
+        if self.wrap_pending {
+            self.handle_newline();
+            // handle_newline will reset wrap_pending
         }
         
         // Calculate character width with error handling
@@ -377,7 +419,7 @@ impl TerminalEmulator {
         
         // Check if character would exceed line boundary
         if self.cursor_col + width > self.cols {
-            // Character doesn't fit on current line, wrap to next line
+            // Character doesn't fit on current line; wrap first
             self.handle_newline();
         }
         
@@ -435,13 +477,14 @@ impl TerminalEmulator {
                 }
             }
 
-            // Advance cursor by character width with overflow protection
-            let new_col = self.cursor_col.saturating_add(width);
-            self.cursor_col = new_col.min(self.cols);
-            
-            // Handle cursor wrapping with width-aware logic
-            if self.cursor_col >= self.cols {
-                self.handle_newline();
+            // Advance cursor by character width with DEC autowrap semantics
+            let next_col = self.cursor_col.saturating_add(width);
+            if next_col >= self.cols {
+                // Stay on last column and set wrap pending for next printable character
+                if self.cols > 0 { self.cursor_col = self.cols - 1; }
+                self.wrap_pending = true;
+            } else {
+                self.cursor_col = next_col;
             }
         }
         
@@ -473,6 +516,8 @@ impl TerminalEmulator {
         
         // Reset cursor positioning flag on newline
         self.cursor_recently_positioned = false;
+        // Cancel any pending wrap once newline is performed
+        self.wrap_pending = false;
         
         // Bounds checking before incrementing row
         if self.cursor_row < usize::MAX {
@@ -499,8 +544,10 @@ impl TerminalEmulator {
 
     fn handle_carriage_return(&mut self) {
         self.cursor_col = 0;
-        // Reset cursor positioning flag on carriage return
-        self.cursor_recently_positioned = false;
+        // Mark as recently positioned so next write clears to end-of-line
+        self.cursor_recently_positioned = true;
+        // Carriage return cancels any pending wrap
+        self.wrap_pending = false;
     }
 
     /// Processes ANSI data and updates the terminal buffer atomically
@@ -794,10 +841,33 @@ impl TerminalEmulator {
                 let clamped_row = row.min(self.rows.saturating_sub(1));
                 let clamped_col = col.min(self.cols.saturating_sub(1));
                 
-                // Use buffer clearing cursor positioning to prevent text contamination
-                // Clear a larger area (30 characters) since we now have atomic processing
-                self.debug_log(&format!("CURSOR_POSITION: moving to ({},{}) and clearing 30 chars", clamped_row, clamped_col));
-                self.move_cursor_and_clear(clamped_row, clamped_col, 30);
+                // Move cursor only; mark for EOL clear on first write to prevent contamination
+                self.debug_log(&format!("CURSOR_POSITION: moving to ({},{})", clamped_row, clamped_col));
+                self.move_cursor(clamped_row, clamped_col);
+                self.cursor_recently_positioned = true;
+            }
+            'G' => {
+                // Cursor Horizontal Absolute (CHA) - move to column on current row
+                // Default is column 1 if parameter missing
+                let ansi_col = self.get_ansi_param_value(&params, 0, 1);
+                let col = ansi_col.saturating_sub(1);
+                let clamped_col = col.min(self.cols.saturating_sub(1));
+                // Move cursor horizontally only; mark for EOL clear on first write
+                let row = self.cursor_row;
+                self.debug_log(&format!("CHA: moving to ({},{})", row, clamped_col));
+                self.move_cursor(row, clamped_col);
+                self.cursor_recently_positioned = true;
+            }
+            'd' => {
+                // Vertical Position Absolute (VPA) - move to row, same column
+                let ansi_row = self.get_ansi_param_value(&params, 0, 1);
+                let row = ansi_row.saturating_sub(1);
+                let clamped_row = row.min(self.rows.saturating_sub(1));
+                // Move cursor vertically only; mark for EOL clear on first write
+                let col = self.cursor_col;
+                self.debug_log(&format!("VPA: moving to ({},{})", clamped_row, col));
+                self.move_cursor(clamped_row, col);
+                self.cursor_recently_positioned = true;
             }
             'A' => {
                 // Cursor up with bounds checking and proper parameter handling
@@ -934,12 +1004,19 @@ impl TerminalEmulator {
                     }
                 }
             }
+            'X' => {
+                // Erase Character (ECH) - clear N chars from cursor position
+                // Default count is 1 when omitted
+                let count = self.get_ansi_param_value(&params, 0, 1);
+                self.clear_cursor_area(count);
+            }
             'm' => {
                 // Set graphics mode (colors, bold, etc.)
                 self.handle_graphics_mode(&params);
             }
             _ => {
                 // Unknown sequence - ignore for now
+                
             }
         }
     }
@@ -1921,6 +1998,50 @@ mod tests {
     }
 
     #[test]
+    fn test_ansi_erase_character_ech() {
+        let mut terminal = TerminalEmulator::new(3, 8);
+        
+        // Fill first line
+        terminal.process_ansi_data("ABCDEFGH");
+        
+        // Move to position 3 (0-based col 2) and erase 3 characters
+        terminal.process_ansi_data("\x1b[1;3H\x1b[3X");
+        
+        // Expect A B cleared C..E and FGH remain
+        assert_eq!(terminal.buffer[0][0].character, 'A');
+        assert_eq!(terminal.buffer[0][1].character, 'B');
+        assert_eq!(terminal.buffer[0][2].character, ' ');
+        assert_eq!(terminal.buffer[0][3].character, ' ');
+        assert_eq!(terminal.buffer[0][4].character, ' ');
+        assert_eq!(terminal.buffer[0][5].character, 'F');
+        assert_eq!(terminal.buffer[0][6].character, 'G');
+        assert_eq!(terminal.buffer[0][7].character, 'H');
+        
+        // Default count is 1
+        terminal.process_ansi_data("\x1b[1;1HX");
+        terminal.process_ansi_data("\x1b[1;1H\x1b[X");
+        assert_eq!(terminal.buffer[0][0].character, ' ');
+    }
+
+    #[test]
+    fn test_ansi_cha_and_vpa() {
+        let mut terminal = TerminalEmulator::new(5, 10);
+        terminal.process_ansi_data("HelloWorld");
+        
+        // Move horizontally absolute to column 6 (1-based) and overwrite
+        terminal.process_ansi_data("\x1b[6GXY");
+        assert_eq!(terminal.buffer[0][5].character, 'X');
+        assert_eq!(terminal.buffer[0][6].character, 'Y');
+        
+        // Move vertically absolute to row 3 (1-based) same column and write
+        terminal.process_ansi_data("\x1b[3dZ");
+        assert_eq!(terminal.cursor_row, 2);
+        // Cursor advances after writing; 'Z' is at previous column
+        let col = terminal.cursor_col.saturating_sub(1);
+        assert_eq!(terminal.buffer[2][col].character, 'Z');
+    }
+
+    #[test]
     fn test_wide_character_handling() {
         let mut terminal = TerminalEmulator::new(3, 5);
         
@@ -1957,18 +2078,18 @@ mod tests {
         // Fill the terminal with more content than it can hold
         terminal.process_ansi_data("ABC\nDEF\nGHI");
         
-        // The terminal should have scrolled twice, so "ABC" and "DEF" should be gone
-        // and we should have "GHI" on the first line and empty second line
-        assert_eq!(terminal.buffer[0][0].character, 'G');
-        assert_eq!(terminal.buffer[0][1].character, 'H');
-        assert_eq!(terminal.buffer[0][2].character, 'I');
-        assert_eq!(terminal.buffer[1][0].character, ' ');
-        assert_eq!(terminal.buffer[1][1].character, ' ');
-        assert_eq!(terminal.buffer[1][2].character, ' ');
+        // With DEC autowrap semantics, only one scroll occurs (after DEF's newline)
+        // Final buffer should contain DEF on first line and GHI on second line
+        assert_eq!(terminal.buffer[0][0].character, 'D');
+        assert_eq!(terminal.buffer[0][1].character, 'E');
+        assert_eq!(terminal.buffer[0][2].character, 'F');
+        assert_eq!(terminal.buffer[1][0].character, 'G');
+        assert_eq!(terminal.buffer[1][1].character, 'H');
+        assert_eq!(terminal.buffer[1][2].character, 'I');
         
-        // Cursor should be at the beginning of the second line after the last newline
+        // Cursor should be at the end of the second line (wrap pending)
         assert_eq!(terminal.cursor_row, 1);
-        assert_eq!(terminal.cursor_col, 0);
+        assert_eq!(terminal.cursor_col, terminal.cols - 1);
     }
 
     #[test]

@@ -114,6 +114,14 @@ let cmd = if config.command.contains('/') {
 4. **Pattern Detection**: Success patterns monitored for auto-restart
 5. **UI Update**: Terminal buffer rendered to GUI with character-level precision
 
+### Terminal Rendering Semantics
+
+- DEC autowrap: Implemented with a `wrap_pending` flag. After reaching the last column, wrapping occurs on the next printable character (matches DEC autowrap semantics).
+- Clearing on cursor moves/CR: After `\r` (carriage return) or cursor movement via CSI `H/f` (CUP), `G` (CHA), or `d` (VPA), the emulator marks `cursor_recently_positioned`. The first non-whitespace printable that follows will clear to end-of-line to prevent contamination.
+- Border-preserving EOL clear: EOL clearing preserves the last column if it contains a border glyph (box-drawing U+2500..U+257F or ASCII `|`), preventing accidental erasure of the right frame line.
+- CSI support: `H/f` (CUP), `G` (CHA), `d` (VPA) for positioning, and `X` (ECH) for clearing N cells from the cursor are implemented and validated by tests.
+- Wide glyphs/emojis: Character width uses `unicode-width` with explicit emoji ranges forced to width=2. Wide chars are represented as a lead cell plus a placeholder in the buffer. The UI renderer draws wide glyphs as fixed two-cell spacers to preserve alignment and avoid right border breakage. A container-based emoji renderer (clip/scale inside two cells) is planned as an optional mode.
+
 ### Auto-Restart Logic
 
 ```rust

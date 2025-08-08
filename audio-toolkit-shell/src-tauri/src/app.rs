@@ -506,9 +506,7 @@ impl AudioToolkitApp {
         }
     }
 
-    /// Renders a single row of terminal cells
-    /// 
-    /// # Arguments
+    // ... (rest of the code remains the same)
     /// 
     /// * `row` - The row of terminal cells to render
     /// * `ui` - The egui UI context
@@ -516,12 +514,32 @@ impl AudioToolkitApp {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.spacing_mut().item_spacing.y = 0.0;
-            for cell in row {
-                // Skip placeholder characters
-                if cell.character == '\0' {
+
+            // Strict layout mode: render wide glyphs as a fixed two-cell spacer to preserve alignment
+            let mut i = 0usize;
+            while i < row.len() {
+                let cell = &row[i];
+
+                // If this is a wide-glyph lead cell, the next cell will be the placeholder '\0'
+                if i + 1 < row.len() && row[i + 1].character == '\0' && cell.character != '\0' {
+                    // Render exactly two monospace spaces to preserve grid alignment, skip the placeholder cell
+                    let spacer2 = egui::RichText::new("  ")
+                        .font(egui::FontId::monospace(12.0));
+                    ui.add(egui::Label::new(spacer2).wrap(false).selectable(false));
+                    i += 2;
                     continue;
                 }
-                
+
+                // Preserve column width for stray placeholder by rendering a single-space spacer
+                if cell.character == '\0' {
+                    let spacer = egui::RichText::new(" ")
+                        .font(egui::FontId::monospace(12.0));
+                    ui.add(egui::Label::new(spacer).wrap(false).selectable(false));
+                    i += 1;
+                    continue;
+                }
+
+                // Normal single-width glyph
                 let mut rich_text = egui::RichText::new(cell.character.to_string())
                     .font(egui::FontId::monospace(12.0))
                     .color(cell.color);
@@ -531,6 +549,7 @@ impl AudioToolkitApp {
                 }
                 
                 ui.add(egui::Label::new(rich_text).wrap(false).selectable(false));
+                i += 1;
             }
         });
     }
@@ -643,7 +662,17 @@ impl App for AudioToolkitApp {
         egui::SidePanel::left("terminal_1")
             .resizable(true)
             .default_width(ctx.screen_rect().width() * 0.5)
+            .min_width(120.0)
+            .width_range(120.0..=f32::INFINITY)
+            .frame(
+                egui::Frame::default()
+                    .fill(ctx.style().visuals.panel_fill)
+                    .inner_margin(egui::Margin::same(0.0))
+                    .outer_margin(egui::Margin::same(0.0)),
+            )
             .show(ctx, |ui| {
+                // Allow the left panel content to shrink to zero width
+                ui.set_min_width(0.0);
                 if !self.tabs.is_empty() {
                     let tab = &mut self.tabs[0]; // Terminal 1
                     let is_focused = self.focused_terminal == 0;
@@ -654,24 +683,37 @@ impl App for AudioToolkitApp {
                         CatppuccinTheme::FRAPPE.subtext0
                     };
 
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!("{} 🖥️ {}", focus_indicator, tab.title()))
-                                .color(title_color)
-                                .strong(),
-                        );
-                        if !is_focused {
-                            ui.label(
-                                egui::RichText::new("(Press Tab to focus)")
-                                    .color(CatppuccinTheme::FRAPPE.overlay0)
-                                    .italics(),
+                    // Header: wrap in a horizontal scroll so it doesn't impose a minimum width
+                    egui::ScrollArea::horizontal().show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(format!(
+                                        "{} 🖥️ {}",
+                                        focus_indicator,
+                                        tab.title()
+                                    ))
+                                    .color(title_color)
+                                    .strong(),
+                                )
+                                .truncate(true),
                             );
-                        }
+                            if !is_focused {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new("(Press Tab to focus)")
+                                            .color(CatppuccinTheme::FRAPPE.overlay0)
+                                            .italics(),
+                                    )
+                                    .truncate(true),
+                                );
+                            }
+                        });
                     });
                     ui.separator();
 
                     // Terminal 1 Output Area with ANSI Color Support
-                    egui::ScrollArea::vertical()
+                    egui::ScrollArea::both()
                         .stick_to_bottom(true)
                         .max_height(ui.available_height() - 60.0)
                         .show(ui, |ui| {
@@ -683,14 +725,18 @@ impl App for AudioToolkitApp {
 
                     // Terminal 1 Input Area
                     ui.separator();
-                    let input_response = ui
-                        .horizontal(|ui| {
-                            ui.label("$");
-                            ui.add(
-                                egui::TextEdit::singleline(tab.input_mut())
-                                    .font(egui::TextStyle::Monospace)
-                                    .desired_width(f32::INFINITY),
-                            )
+                    // Input row: wrap in horizontal scroll and allow it to shrink fully
+                    let input_response = egui::ScrollArea::horizontal()
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("$");
+                                ui.add(
+                                    egui::TextEdit::singleline(tab.input_mut())
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(ui.available_width()),
+                                )
+                            })
+                            .inner
                         })
                         .inner;
 
@@ -700,8 +746,7 @@ impl App for AudioToolkitApp {
                     }
 
                     // Handle text input and Enter key
-                    if input_response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                    {
+                    if input_response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         let mut input_with_newline = tab.input().to_string();
                         input_with_newline.push('\n');
 
@@ -714,11 +759,15 @@ impl App for AudioToolkitApp {
                         }
 
                         tab.clear_input();
+                        input_response.request_focus();
                     }
                 }
             });
 
+        // Central panel for Terminal 2 (single divider between left panel and central panel)
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Keep a simple lower bound to avoid layout issues and overlap
+            ui.set_min_width(120.0);
             if self.tabs.len() > 1 {
                 let tab = &mut self.tabs[1]; // Terminal 2
                 let is_focused = self.focused_terminal == 1;
@@ -729,24 +778,37 @@ impl App for AudioToolkitApp {
                     CatppuccinTheme::FRAPPE.subtext0
                 };
 
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{} 🖥️ {}", focus_indicator, tab.title()))
-                            .color(title_color)
-                            .strong(),
-                    );
-                    if !is_focused {
-                        ui.label(
-                            egui::RichText::new("(Press Tab to focus)")
-                                .color(CatppuccinTheme::FRAPPE.overlay0)
-                                .italics(),
+                // Header: wrap in a horizontal scroll so it doesn't impose a minimum width
+                egui::ScrollArea::horizontal().show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!(
+                                    "{} 🖥️ {}",
+                                    focus_indicator,
+                                    tab.title()
+                                ))
+                                .color(title_color)
+                                .strong(),
+                            )
+                            .truncate(true),
                         );
-                    }
+                        if !is_focused {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new("(Press Tab to focus)")
+                                        .color(CatppuccinTheme::FRAPPE.overlay0)
+                                        .italics(),
+                                )
+                                .truncate(true),
+                            );
+                        }
+                    });
                 });
                 ui.separator();
 
                 // Terminal 2 Output Area with ANSI Color Support
-                egui::ScrollArea::vertical()
+                egui::ScrollArea::both()
                     .stick_to_bottom(true)
                     .max_height(ui.available_height() - 60.0)
                     .show(ui, |ui| {
@@ -758,14 +820,18 @@ impl App for AudioToolkitApp {
 
                 // Terminal 2 Input Area
                 ui.separator();
-                let input_response = ui
-                    .horizontal(|ui| {
-                        ui.label("$");
-                        ui.add(
-                            egui::TextEdit::singleline(tab.input_mut())
-                                .font(egui::TextStyle::Monospace)
-                                .desired_width(f32::INFINITY),
-                        )
+                // Input row: wrap in horizontal scroll and allow it to shrink fully
+                let input_response = egui::ScrollArea::horizontal()
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("$");
+                            ui.add(
+                                egui::TextEdit::singleline(tab.input_mut())
+                                    .font(egui::TextStyle::Monospace)
+                                    .desired_width(ui.available_width()),
+                            )
+                        })
+                        .inner
                     })
                     .inner;
 
