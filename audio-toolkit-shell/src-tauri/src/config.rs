@@ -65,6 +65,23 @@ pub struct AppSettings {
     pub name: String,
     pub window_width: f32,
     pub window_height: f32,
+    /// Minimum width (in px) for the left terminal panel. Defaults to 120.0
+    #[serde(default = "default_min_left_width")]
+    pub min_left_width: f32,
+    /// Minimum width (in px) for the right (central) terminal panel. Defaults to 120.0
+    #[serde(default = "default_min_right_width")]
+    pub min_right_width: f32,
+    /// If true, panels may collapse to zero width. Defaults to false for stability.
+    #[serde(default)]
+    pub allow_zero_collapse: bool,
+}
+
+fn default_min_left_width() -> f32 {
+    120.0
+}
+
+fn default_min_right_width() -> f32 {
+    120.0
 }
 
 /// Configuration for individual terminal tabs
@@ -123,6 +140,9 @@ pub fn default_config() -> AppConfig {
             name: "Audio Toolkit Shell".to_string(),
             window_width: 1280.0,
             window_height: 720.0,
+            min_left_width: 120.0,
+            min_right_width: 120.0,
+            allow_zero_collapse: false,
         },
         tabs: vec![
             TabConfig {

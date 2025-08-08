@@ -27,7 +27,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 use std::thread;
 
-use crate::config::{AppConfig, TabConfig};
+use crate::config::{AppConfig, AppSettings, TabConfig};
 use crate::terminal::{TerminalCell, TerminalEmulator};
 use crate::theme::CatppuccinTheme;
 
@@ -482,6 +482,7 @@ impl TerminalTab {
 pub struct AudioToolkitApp {
     tabs: Vec<TerminalTab>,
     focused_terminal: usize, // 0 = left terminal, 1 = right terminal
+    app_settings: AppSettings,
 }
 
 impl AudioToolkitApp {
@@ -498,11 +499,13 @@ impl AudioToolkitApp {
     /// 
     /// A new `AudioToolkitApp` instance ready for use with eframe
     pub fn new(config: AppConfig) -> Self {
-        let tabs = config.tabs.into_iter().map(TerminalTab::new).collect();
+        let AppConfig { app, tabs } = config;
+        let tabs = tabs.into_iter().map(TerminalTab::new).collect();
 
         Self {
             tabs,
             focused_terminal: 0, // Start with left terminal focused
+            app_settings: app,
         }
     }
 
@@ -658,12 +661,22 @@ impl App for AudioToolkitApp {
             }
         }
 
+        // Compute panel minimum widths from configuration
+        let (min_left, min_right) = if self.app_settings.allow_zero_collapse {
+            (0.0_f32, 0.0_f32)
+        } else {
+            (
+                self.app_settings.min_left_width.max(0.0),
+                self.app_settings.min_right_width.max(0.0),
+            )
+        };
+
         // Split-Screen Layout: Terminal 1 (Left) and Terminal 2 (Right)
         egui::SidePanel::left("terminal_1")
             .resizable(true)
             .default_width(ctx.screen_rect().width() * 0.5)
-            .min_width(120.0)
-            .width_range(120.0..=f32::INFINITY)
+            .min_width(min_left)
+            .width_range(min_left..=f32::INFINITY)
             .frame(
                 egui::Frame::default()
                     .fill(ctx.style().visuals.panel_fill)
@@ -767,7 +780,7 @@ impl App for AudioToolkitApp {
         // Central panel for Terminal 2 (single divider between left panel and central panel)
         egui::CentralPanel::default().show(ctx, |ui| {
             // Keep a simple lower bound to avoid layout issues and overlap
-            ui.set_min_width(120.0);
+            ui.set_min_width(min_right);
             if self.tabs.len() > 1 {
                 let tab = &mut self.tabs[1]; // Terminal 2
                 let is_focused = self.focused_terminal == 1;
