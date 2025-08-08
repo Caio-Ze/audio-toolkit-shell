@@ -698,6 +698,20 @@ impl AudioToolkitApp {
             .outer_margin(egui::Margin::same(0.0))
             .show(ui, |ui| {
                 // Header: clickable to focus, truncated text
+                // Compute a title font size ~30% larger than the base UI text
+                let base_size = {
+                    let styles = &ui.style().text_styles;
+                    let body = styles
+                        .get(&egui::TextStyle::Body)
+                        .map(|f| f.size)
+                        .unwrap_or(14.0);
+                    styles
+                        .get(&egui::TextStyle::Button)
+                        .map(|f| f.size)
+                        .unwrap_or(body)
+                };
+                let title_size = base_size * 1.3;
+
                 let header_resp = ui
                     .horizontal(|ui| {
                         let lbl = ui.add(
@@ -708,7 +722,8 @@ impl AudioToolkitApp {
                                     tab.title()
                                 ))
                                 .color(title_color)
-                                .strong(),
+                                .strong()
+                                .size(title_size),
                             )
                             .truncate(true)
                             .sense(egui::Sense::click()),
