@@ -596,6 +596,14 @@ impl TerminalEmulator {
                     // Handle tab - move to next tab stop (every 8 characters)
                     let next_tab = ((self.cursor_col / 8) + 1) * 8;
                     self.cursor_col = next_tab.min(self.cols - 1);
+                } else if ch == '\u{0008}' {
+                    // ASCII Backspace: move cursor one position left without erasing
+                    // Many shells echo backspace as "\x08 \x08" (BS, space, BS)
+                    // so this must move left to make deletion sequences render correctly.
+                    self.cursor_col = self.cursor_col.saturating_sub(1);
+                    // Backspace cancels any pending wrap since we explicitly move left
+                    self.wrap_pending = false;
+                    self.validate_cursor_position();
                 } else if ch.is_control() {
                     // Skip other control characters
                 } else {

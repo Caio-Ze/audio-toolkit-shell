@@ -5,8 +5,10 @@
 //! 
 //! ## Architecture
 //! 
-//! The application uses a dual-pane layout with two terminal tabs displayed side by side.
-//! Each tab runs its own PTY (pseudo-terminal) and can execute different commands.
+//! The application uses a fixed four-terminal layout: one terminal on the left,
+//! two terminals on the top-right (side-by-side), and one terminal on the
+//! bottom-right. Each tab runs its own PTY (pseudo-terminal) and can execute
+//! different commands.
 //! 
 //! ## Key Components
 //! 
@@ -16,12 +18,13 @@
 //! ## Features
 //! 
 //! - Split-screen terminal interface
-//! - Tab focus switching with Tab key
+//! - Focus cycling with Shift+Tab (Tab is forwarded to the terminal)
 //! - Auto-restart functionality based on pattern matching
 //! - Full keyboard input support including arrow keys
 //! - ANSI color rendering with Catppuccin theme
 
 use eframe::{egui, App, Frame};
+use egui_extras::{Size, StripBuilder};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use std::io::{Read, Write};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
@@ -50,7 +53,6 @@ pub struct TerminalTab {
     output_rx: Receiver<String>,
     output: String,
     terminal_emulator: TerminalEmulator,
-    input: String,
     needs_restart: bool,
     startup_time: std::time::Instant,
     pattern_matches: u32,
@@ -158,7 +160,6 @@ impl TerminalTab {
             output_rx,
             output: String::new(),
             terminal_emulator: TerminalEmulator::new(24, 80),
-            input: String::new(),
             needs_restart: false,
             startup_time: std::time::Instant::now(),
             pattern_matches: 0,
@@ -405,34 +406,6 @@ impl TerminalTab {
         &self.terminal_emulator
     }
 
-    /// Gets a mutable reference to the input string
-    /// 
-    /// Used by the UI to allow editing of the current input line.
-    /// 
-    /// # Returns
-    /// 
-    /// A mutable reference to the input string
-    pub fn input_mut(&mut self) -> &mut String {
-        &mut self.input
-    }
-
-    /// Gets the current input string
-    /// 
-    /// # Returns
-    /// 
-    /// A string slice containing the current input text
-    pub fn input(&self) -> &str {
-        &self.input
-    }
-
-    /// Clears the input string
-    /// 
-    /// Typically called after sending input to the PTY to reset
-    /// the input field for the next command.
-    pub fn clear_input(&mut self) {
-        self.input.clear();
-    }
-
     /// Strips ANSI escape codes from text for pattern matching
     /// 
     /// # Arguments
@@ -481,7 +454,7 @@ impl TerminalTab {
 /// and handles global keyboard shortcuts for tab switching.
 pub struct AudioToolkitApp {
     tabs: Vec<TerminalTab>,
-    focused_terminal: usize, // 0 = left terminal, 1 = right terminal
+    focused_terminal: usize, // 0..=3 correspond to the four fixed terminals (L, RT-L, RT-R, RB)
     app_settings: AppSettings,
 }
 
@@ -500,7 +473,23 @@ impl AudioToolkitApp {
     /// A new `AudioToolkitApp` instance ready for use with eframe
     pub fn new(config: AppConfig) -> Self {
         let AppConfig { app, tabs } = config;
-        let tabs = tabs.into_iter().map(TerminalTab::new).collect();
+        let mut tabs: Vec<TerminalTab> = tabs.into_iter().map(TerminalTab::new).collect();
+
+        // Ensure we have exactly four terminals for the fixed layout:
+        // Fill missing with default bash tabs; ignore extras beyond four.
+        while tabs.len() < 4 {
+            let idx = tabs.len() + 1;
+            let cfg = TabConfig {
+                title: format!("Terminal {}", idx),
+                command: "bash".to_string(),
+                auto_restart_on_success: false,
+                success_patterns: vec![],
+            };
+            tabs.push(TerminalTab::new(cfg));
+        }
+        if tabs.len() > 4 {
+            tabs.truncate(4);
+        }
 
         Self {
             tabs,
@@ -557,6 +546,126 @@ impl AudioToolkitApp {
         });
     }
 
+    /// Global keyboard input handler: reads from ctx so input is not lost to nested widgets
+    fn handle_terminal_key_input_ctx(
+        ctx: &egui::Context,
+        pty_writer: &mut Option<Box<dyn Write + Send>>,
+    ) {
+        ctx.input(|i| {
+            // Handle all inputs via raw events so no widget consumption can block them
+            for ev in &i.events {
+                match ev {
+                    egui::Event::Text(text) => {
+                        // If CTRL is held and a single ASCII char is typed, map to control code.
+                        // Example: Ctrl+C -> 0x03 (ETX), Ctrl+D -> 0x04 (EOT), etc.
+                        // This enables terminal signals like SIGINT via PTY line discipline.
+                        if i.modifiers.ctrl {
+                            if text.len() == 1 {
+                                let mut ch_iter = text.chars();
+                                if let Some(ch) = ch_iter.next() {
+                                    if ch.is_ascii() {
+                                        let upper = ch.to_ascii_uppercase();
+                                        let code = (upper as u8) & 0x1F; // Map A..Z to 0x01..0x1A
+                                        if code != 0 { // Skip NUL for non A..Z, still harmless
+                                            if let Some(ref mut writer) = pty_writer {
+                                                let _ = writer.write_all(&[code]);
+                                            }
+                                            // Swallow regular text for Ctrl+<char>
+                                            continue;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Default: forward typed text as-is
+                        if let Some(ref mut writer) = pty_writer {
+                            let _ = writer.write_all(text.as_bytes());
+                        }
+                    }
+                    egui::Event::Paste(text) => {
+                        if let Some(ref mut writer) = pty_writer {
+                            let _ = writer.write_all(text.as_bytes());
+                        }
+                    }
+                    egui::Event::Key { key, pressed, repeat: _, modifiers, .. } => {
+                        if *pressed {
+                            // Handle Ctrl-based TTY signals only (avoid hijacking Command shortcuts)
+                            let mut handled_ctrl = false;
+                            if modifiers.ctrl {
+                                match key {
+                                    // Ctrl+C -> ETX (SIGINT)
+                                    egui::Key::C => {
+                                        if let Some(ref mut writer) = pty_writer {
+                                            let _ = writer.write_all(&[0x03]);
+                                        }
+                                        handled_ctrl = true;
+                                    }
+                                    // Ctrl+D -> EOT (EOF)
+                                    egui::Key::D => {
+                                        if let Some(ref mut writer) = pty_writer {
+                                            let _ = writer.write_all(&[0x04]);
+                                        }
+                                        handled_ctrl = true;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if handled_ctrl { return; }
+                            match key {
+                                egui::Key::Enter => {
+                                    if let Some(ref mut writer) = pty_writer {
+                                        // CR is the most compatible for PTYs
+                                        let _ = writer.write_all(b"\r");
+                                    }
+                                }
+                                egui::Key::Backspace => {
+                                    if let Some(ref mut writer) = pty_writer {
+                                        // Send DEL (0x7F). If a target app expects BS (0x08), we can add an option later.
+                                        let _ = writer.write_all(&[0x7F]);
+                                    }
+                                }
+                                egui::Key::Tab => {
+                                    if !modifiers.shift {
+                                        if let Some(ref mut writer) = pty_writer {
+                                            let _ = writer.write_all(b"\t");
+                                        }
+                                    }
+                                }
+                                egui::Key::Escape => {
+                                    if let Some(ref mut writer) = pty_writer {
+                                        let _ = writer.write_all(b"\x1b");
+                                    }
+                                }
+                                egui::Key::ArrowUp => {
+                                    if let Some(ref mut writer) = pty_writer {
+                                        let _ = writer.write_all(b"\x1b[A");
+                                    }
+                                }
+                                egui::Key::ArrowDown => {
+                                    if let Some(ref mut writer) = pty_writer {
+                                        let _ = writer.write_all(b"\x1b[B");
+                                    }
+                                }
+                                egui::Key::ArrowLeft => {
+                                    if let Some(ref mut writer) = pty_writer {
+                                        let _ = writer.write_all(b"\x1b[D");
+                                    }
+                                }
+                                egui::Key::ArrowRight => {
+                                    if let Some(ref mut writer) = pty_writer {
+                                        let _ = writer.write_all(b"\x1b[C");
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        });
+    }
+
     /// Renders the complete terminal buffer
     /// 
     /// # Arguments
@@ -572,7 +681,71 @@ impl AudioToolkitApp {
         }
     }
 
-    /// Handles terminal keyboard input including arrow keys and special keys
+    /// Renders a single terminal panel (header, output). Returns true if the header was clicked.
+    fn render_terminal_panel(ui: &mut egui::Ui, tab: &mut TerminalTab, is_focused: bool) -> bool {
+        let mut clicked = false;
+        let focus_indicator = if is_focused { "🔵" } else { "⚪" };
+        let title_color = if is_focused {
+            CatppuccinTheme::FRAPPE.blue
+        } else {
+            CatppuccinTheme::FRAPPE.subtext0
+        };
+
+        egui::Frame::default()
+            .fill(ui.style().visuals.panel_fill)
+            .stroke(egui::Stroke { width: 0.0, color: egui::Color32::TRANSPARENT })
+            .inner_margin(egui::Margin::same(0.0))
+            .outer_margin(egui::Margin::same(0.0))
+            .show(ui, |ui| {
+                // Header: clickable to focus, truncated text
+                let header_resp = ui
+                    .horizontal(|ui| {
+                        let lbl = ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!(
+                                    "{} 🖥️ {}",
+                                    focus_indicator,
+                                    tab.title()
+                                ))
+                                .color(title_color)
+                                .strong(),
+                            )
+                            .truncate(true)
+                            .sense(egui::Sense::click()),
+                        );
+                        if !is_focused {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new("(Click to focus)")
+                                        .color(CatppuccinTheme::FRAPPE.overlay0)
+                                        .italics(),
+                                )
+                                .truncate(true),
+                            );
+                        }
+                        lbl
+                    })
+                    .inner;
+                if header_resp.clicked() {
+                    clicked = true;
+                }
+
+                // Output: occupy full width; sticky to bottom; no auto-shrink so it reaches the panel edge
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        // Ensure inner content takes the full available width (flush to the right edge)
+                        ui.set_width(ui.available_width());
+                        ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
+                        Self::render_terminal_buffer(ui, &tab.terminal_emulator().buffer);
+                    });
+            });
+
+        clicked
+    }
+
+    /// Handles terminal keyboard input including arrow keys and special keys (panel-local)
     /// 
     /// # Arguments
     /// 
@@ -583,36 +756,65 @@ impl AudioToolkitApp {
         pty_writer: &mut Option<Box<dyn Write + Send>>,
     ) {
         ui.input(|i| {
-            // Handle arrow keys for navigation
+            // Forward text input and paste directly to PTY
+            for ev in &i.events {
+                match ev {
+                    egui::Event::Text(text) => {
+                        if let Some(ref mut writer) = pty_writer {
+                            let _ = writer.write_all(text.as_bytes());
+                        }
+                    }
+                    egui::Event::Paste(text) => {
+                        if let Some(ref mut writer) = pty_writer {
+                            let _ = writer.write_all(text.as_bytes());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Special keys
+            if i.key_pressed(egui::Key::Enter) {
+                if let Some(ref mut writer) = pty_writer {
+                    let _ = writer.write_all(b"\n");
+                }
+            }
+            if i.key_pressed(egui::Key::Backspace) {
+                if let Some(ref mut writer) = pty_writer {
+                    let _ = writer.write_all(&[0x7F]); // DEL
+                }
+            }
+            // Forward Tab to PTY; Shift+Tab is reserved for focus cycling globally
+            if i.key_pressed(egui::Key::Tab) && !i.modifiers.shift {
+                if let Some(ref mut writer) = pty_writer {
+                    let _ = writer.write_all(b"\t");
+                }
+            }
+            if i.key_pressed(egui::Key::Escape) {
+                if let Some(ref mut writer) = pty_writer {
+                    let _ = writer.write_all(b"\x1b");
+                }
+            }
+
+            // Arrow keys -> CSI sequences
             if i.key_pressed(egui::Key::ArrowUp) {
                 if let Some(ref mut writer) = pty_writer {
-                    let _ = writer.write_all(b"\x1b[A"); // Up arrow ANSI sequence
+                    let _ = writer.write_all(b"\x1b[A");
                 }
             }
             if i.key_pressed(egui::Key::ArrowDown) {
                 if let Some(ref mut writer) = pty_writer {
-                    let _ = writer.write_all(b"\x1b[B"); // Down arrow ANSI sequence
+                    let _ = writer.write_all(b"\x1b[B");
                 }
             }
             if i.key_pressed(egui::Key::ArrowLeft) {
                 if let Some(ref mut writer) = pty_writer {
-                    let _ = writer.write_all(b"\x1b[D"); // Left arrow ANSI sequence
+                    let _ = writer.write_all(b"\x1b[D");
                 }
             }
             if i.key_pressed(egui::Key::ArrowRight) {
                 if let Some(ref mut writer) = pty_writer {
-                    let _ = writer.write_all(b"\x1b[C"); // Right arrow ANSI sequence
-                }
-            }
-            // Handle other special keys
-            if i.key_pressed(egui::Key::Escape) {
-                if let Some(ref mut writer) = pty_writer {
-                    let _ = writer.write_all(b"\x1b"); // Escape key
-                }
-            }
-            if i.key_pressed(egui::Key::Space) {
-                if let Some(ref mut writer) = pty_writer {
-                    let _ = writer.write_all(b" "); // Space key
+                    let _ = writer.write_all(b"\x1b[C");
                 }
             }
         });
@@ -634,24 +836,15 @@ impl App for AudioToolkitApp {
         // Apply the themed style to the egui context
         ctx.set_style(style);
         
-        // Request a repaint to ensure we check for new PTY data
+        // Keep repainting to poll PTY data and handle input
         ctx.request_repaint();
 
-        // Handle global keyboard shortcuts for terminal focus switching
-        ctx.input(|i| {
-            if i.key_pressed(egui::Key::Tab) {
-                // Switch focus between terminals (0 = left, 1 = right)
-                self.focused_terminal = if self.focused_terminal == 0 { 1 } else { 0 };
-                println!(
-                    "Focus switched to terminal: {}",
-                    if self.focused_terminal == 0 {
-                        "Left"
-                    } else {
-                        "Right"
-                    }
-                );
+        // Global keyboard shortcut: cycle focus across terminals (Shift+Tab)
+        if ctx.input(|i| i.modifiers.shift && i.key_pressed(egui::Key::Tab)) {
+            if !self.tabs.is_empty() {
+                self.focused_terminal = (self.focused_terminal + 1) % self.tabs.len().max(1);
             }
-        });
+        }
 
         // Update output for all tabs and handle restarts
         for tab in &mut self.tabs {
@@ -671,8 +864,10 @@ impl App for AudioToolkitApp {
             )
         };
 
-        // Split-Screen Layout: Terminal 1 (Left) and Terminal 2 (Right)
-        egui::SidePanel::left("terminal_1")
+        // Split-Screen Layout: 4 terminals fixed layout
+        // Left: tabs[0] occupying full height in a resizable SidePanel.
+        // Right: CentralPanel contains a vertical split: top (two terminals side-by-side) and bottom (one terminal full width).
+        let left_panel = egui::SidePanel::left("terminal_1")
             .resizable(true)
             .default_width(ctx.screen_rect().width() * 0.5)
             .min_width(min_left)
@@ -686,190 +881,124 @@ impl App for AudioToolkitApp {
             .show(ctx, |ui| {
                 // Allow the left panel content to shrink to zero width
                 ui.set_min_width(0.0);
-                if !self.tabs.is_empty() {
-                    let tab = &mut self.tabs[0]; // Terminal 1
+                if self.tabs.len() >= 1 {
+                    let tab = &mut self.tabs[0];
                     let is_focused = self.focused_terminal == 0;
-                    let focus_indicator = if is_focused { "🔵" } else { "⚪" };
-                    let title_color = if is_focused {
-                        CatppuccinTheme::FRAPPE.blue
-                    } else {
-                        CatppuccinTheme::FRAPPE.subtext0
-                    };
-
-                    // Header: wrap in a horizontal scroll so it doesn't impose a minimum width
-                    egui::ScrollArea::horizontal().show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.add(
-                                egui::Label::new(
-                                    egui::RichText::new(format!(
-                                        "{} 🖥️ {}",
-                                        focus_indicator,
-                                        tab.title()
-                                    ))
-                                    .color(title_color)
-                                    .strong(),
-                                )
-                                .truncate(true),
-                            );
-                            if !is_focused {
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new("(Press Tab to focus)")
-                                            .color(CatppuccinTheme::FRAPPE.overlay0)
-                                            .italics(),
-                                    )
-                                    .truncate(true),
-                                );
-                            }
-                        });
-                    });
-                    ui.separator();
-
-                    // Terminal 1 Output Area with ANSI Color Support
-                    egui::ScrollArea::both()
-                        .stick_to_bottom(true)
-                        .max_height(ui.available_height() - 60.0)
-                        .show(ui, |ui| {
-                            ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
-
-                            // Render terminal emulator buffer
-                            Self::render_terminal_buffer(ui, &tab.terminal_emulator().buffer);
-                        });
-
-                    // Terminal 1 Input Area
-                    ui.separator();
-                    // Input row: wrap in horizontal scroll and allow it to shrink fully
-                    let input_response = egui::ScrollArea::horizontal()
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("$");
-                                ui.add(
-                                    egui::TextEdit::singleline(tab.input_mut())
-                                        .font(egui::TextStyle::Monospace)
-                                        .desired_width(ui.available_width()),
-                                )
-                            })
-                            .inner
-                        })
-                        .inner;
-
-                    // Handle comprehensive key input for terminal navigation (only if this terminal is focused)
-                    if is_focused {
-                        Self::handle_terminal_key_input(ui, &mut tab.pty_writer);
-                    }
-
-                    // Handle text input and Enter key
-                    if input_response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        let mut input_with_newline = tab.input().to_string();
-                        input_with_newline.push('\n');
-
-                        if let Some(ref mut writer) = tab.pty_writer {
-                            if let Err(e) = writer.write_all(input_with_newline.as_bytes()) {
-                                eprintln!("Error writing to PTY: {}", e);
-                            }
-                        } else {
-                            eprintln!("No PTY writer available");
-                        }
-
-                        tab.clear_input();
-                        input_response.request_focus();
+                    let clicked = Self::render_terminal_panel(ui, tab, is_focused);
+                    if clicked {
+                        self.focused_terminal = 0;
                     }
                 }
             });
 
-        // Central panel for Terminal 2 (single divider between left panel and central panel)
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // Keep a simple lower bound to avoid layout issues and overlap
+        // Central panel for the three right-side terminals
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::default()
+                    .fill(ctx.style().visuals.panel_fill)
+                    .inner_margin(egui::Margin::same(0.0))
+                    .outer_margin(egui::Margin::same(0.0)),
+            )
+            .show(ctx, |ui| {
             ui.set_min_width(min_right);
-            if self.tabs.len() > 1 {
-                let tab = &mut self.tabs[1]; // Terminal 2
-                let is_focused = self.focused_terminal == 1;
-                let focus_indicator = if is_focused { "🔵" } else { "⚪" };
-                let title_color = if is_focused {
-                    CatppuccinTheme::FRAPPE.blue
-                } else {
-                    CatppuccinTheme::FRAPPE.subtext0
-                };
+            // Ensure no gaps between cells so our custom separators align exactly
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            // Read split ratios from configuration and clamp to [0.0, 1.0]
+            let top_frac = self
+                .app_settings
+                .right_top_fraction
+                .max(0.0)
+                .min(1.0);
+            StripBuilder::new(ui)
+                .size(Size::relative(top_frac).at_least(120.0)) // top area
+                .size(Size::exact(1.0)) // horizontal divider
+                .size(Size::remainder().at_least(120.0)) // bottom area
+                .vertical(|mut strip| {
+                    // Top two terminals side-by-side (tabs[1], tabs[2])
+                    strip.cell(|ui| {
+                        let hfrac = self
+                            .app_settings
+                            .right_top_hsplit_fraction
+                            .max(0.0)
+                            .min(1.0);
+                        StripBuilder::new(ui)
+                            .size(Size::relative(hfrac).at_least(120.0))
+                            .size(Size::exact(1.0)) // vertical divider
+                            .size(Size::remainder().at_least(120.0))
+                            .horizontal(|mut strip| {
+                                // Left top terminal
+                                strip.cell(|ui| {
+                                    if self.tabs.len() >= 2 {
+                                        let tab = &mut self.tabs[1];
+                                        let is_focused = self.focused_terminal == 1;
+                                        let clicked = Self::render_terminal_panel(ui, tab, is_focused);
+                                        if clicked {
+                                            self.focused_terminal = 1;
+                                        }
+                                    }
+                                });
+                                // Vertical divider
+                                strip.cell(|ui| {
+                                    let r = ui.max_rect();
+                                    ui.painter().vline(
+                                        r.center().x.round(),
+                                        r.y_range(),
+                                        egui::Stroke { width: 1.0, color: CatppuccinTheme::FRAPPE.surface1 },
+                                    );
+                                });
+                                // Right top terminal
+                                strip.cell(|ui| {
+                                    if self.tabs.len() >= 3 {
+                                        let tab = &mut self.tabs[2];
+                                        let is_focused = self.focused_terminal == 2;
+                                        let clicked = Self::render_terminal_panel(ui, tab, is_focused);
+                                        if clicked {
+                                            self.focused_terminal = 2;
+                                        }
+                                    }
+                                });
+                            });
+                    });
 
-                // Header: wrap in a horizontal scroll so it doesn't impose a minimum width
-                egui::ScrollArea::horizontal().show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(format!(
-                                    "{} 🖥️ {}",
-                                    focus_indicator,
-                                    tab.title()
-                                ))
-                                .color(title_color)
-                                .strong(),
-                            )
-                            .truncate(true),
+                    // Horizontal divider between top and bottom
+                    strip.cell(|ui| {
+                        let r = ui.max_rect();
+                        ui.painter().hline(
+                            r.x_range(),
+                            r.center().y.round(),
+                            egui::Stroke { width: 1.0, color: CatppuccinTheme::FRAPPE.surface1 },
                         );
-                        if !is_focused {
-                            ui.add(
-                                egui::Label::new(
-                                    egui::RichText::new("(Press Tab to focus)")
-                                        .color(CatppuccinTheme::FRAPPE.overlay0)
-                                        .italics(),
-                                )
-                                .truncate(true),
-                            );
+                    });
+
+                    // Bottom terminal (tabs[3])
+                    strip.cell(|ui| {
+                        if self.tabs.len() >= 4 {
+                            let tab = &mut self.tabs[3];
+                            let is_focused = self.focused_terminal == 3;
+                            let clicked = Self::render_terminal_panel(ui, tab, is_focused);
+                            if clicked {
+                                self.focused_terminal = 3;
+                            }
                         }
                     });
                 });
-                ui.separator();
-
-                // Terminal 2 Output Area with ANSI Color Support
-                egui::ScrollArea::both()
-                    .stick_to_bottom(true)
-                    .max_height(ui.available_height() - 60.0)
-                    .show(ui, |ui| {
-                        ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
-
-                        // Render terminal emulator buffer
-                        Self::render_terminal_buffer(ui, &tab.terminal_emulator().buffer);
-                    });
-
-                // Terminal 2 Input Area
-                ui.separator();
-                // Input row: wrap in horizontal scroll and allow it to shrink fully
-                let input_response = egui::ScrollArea::horizontal()
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("$");
-                            ui.add(
-                                egui::TextEdit::singleline(tab.input_mut())
-                                    .font(egui::TextStyle::Monospace)
-                                    .desired_width(ui.available_width()),
-                            )
-                        })
-                        .inner
-                    })
-                    .inner;
-
-                // Handle comprehensive key input for terminal navigation (only if this terminal is focused)
-                if is_focused {
-                    Self::handle_terminal_key_input(ui, &mut tab.pty_writer);
-                }
-
-                // Handle text input and Enter key
-                if input_response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    let mut input_with_newline = tab.input().to_string();
-                    input_with_newline.push('\n');
-
-                    if let Some(ref mut writer) = tab.pty_writer {
-                        if let Err(e) = writer.write_all(input_with_newline.as_bytes()) {
-                            eprintln!("Error writing to PTY: {}", e);
-                        }
-                    } else {
-                        eprintln!("No PTY writer available");
-                    }
-
-                    tab.clear_input();
-                    input_response.request_focus();
-                }
-            }
         });
+
+        // Elegant divider between left panel and right cluster
+        let x = left_panel.response.rect.right().round();
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("divider_left_right"),
+        ));
+        painter.vline(
+            x,
+            ctx.screen_rect().y_range(),
+            egui::Stroke { width: 1.0, color: CatppuccinTheme::FRAPPE.surface1 },
+        );
+        
+        // Forward keyboard input to the currently focused terminal's PTY
+        if let Some(tab) = self.tabs.get_mut(self.focused_terminal) {
+            Self::handle_terminal_key_input_ctx(ctx, &mut tab.pty_writer);
+        }
     }
 }

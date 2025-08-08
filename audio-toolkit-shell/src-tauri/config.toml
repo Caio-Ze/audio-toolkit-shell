@@ -12,13 +12,13 @@ window_height = 720                   # Initial window height in pixels
 
 [[tabs]]
 title = "Start Scripts"                                                    # Tab display name
-command = "/Users/caioraphael/Desktop/BOUNCET4/PYTHON_SCRIPTS/start_scripts_rust"  # Executable to run
+command = "/Users/caioraphael/PYTHON/FULL_APP/launchers/audio-analyzer/start_scripts/SESSSION_MONITOR_PT_SESSIONS/session-monitor"  # Executable to run
 auto_restart_on_success = false                                            # Auto-restart disabled for testing
 success_patterns = ["Completed successfully", "SCRIPT MENU"]               # Text patterns that trigger restart
 
 [[tabs]]
 title = "Session Monitor"                # Session Monitor terminal
-command = "/Users/caioraphael/PYTHON/FULL_APP/launchers/audio-analyzer/start_scripts/SESSSION_MONITOR_PT_SESSIONS/session-monitor"  # Session monitor executable
+command = "/Users/caioraphael/Desktop/BOUNCET4/PYTHON_SCRIPTS/start_scripts_rust"  # Session monitor executable
 auto_restart_on_success = false         # Auto-restart when session monitoring completes
 success_patterns = ["Monitoring complete", "Session ended", "Ready for next session"]  # Session monitor completion patterns
 

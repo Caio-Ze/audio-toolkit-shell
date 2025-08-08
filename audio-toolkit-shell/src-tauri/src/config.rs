@@ -29,7 +29,8 @@
 //! ## Fallback Behavior
 //! 
 //! If the configuration file is missing or invalid, the application will use
-//! sensible defaults with two bash terminal tabs.
+//! sensible defaults with four bash terminal tabs arranged in a fixed layout
+//! (one left, two right-top, one right-bottom).
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -74,6 +75,12 @@ pub struct AppSettings {
     /// If true, panels may collapse to zero width. Defaults to false for stability.
     #[serde(default)]
     pub allow_zero_collapse: bool,
+    /// Fraction of the right area height taken by the top row (two terminals). Defaults to 0.6
+    #[serde(default = "default_right_top_fraction")]
+    pub right_top_fraction: f32,
+    /// Fraction of the top row width given to the left terminal (of the two top). Defaults to 0.5
+    #[serde(default = "default_right_top_hsplit_fraction")]
+    pub right_top_hsplit_fraction: f32,
 }
 
 fn default_min_left_width() -> f32 {
@@ -82,6 +89,14 @@ fn default_min_left_width() -> f32 {
 
 fn default_min_right_width() -> f32 {
     120.0
+}
+
+fn default_right_top_fraction() -> f32 {
+    0.6
+}
+
+fn default_right_top_hsplit_fraction() -> f32 {
+    0.5
 }
 
 /// Configuration for individual terminal tabs
@@ -143,6 +158,8 @@ pub fn default_config() -> AppConfig {
             min_left_width: 120.0,
             min_right_width: 120.0,
             allow_zero_collapse: false,
+            right_top_fraction: 0.6,
+            right_top_hsplit_fraction: 0.5,
         },
         tabs: vec![
             TabConfig {
@@ -153,6 +170,18 @@ pub fn default_config() -> AppConfig {
             },
             TabConfig {
                 title: "Terminal 2".to_string(),
+                command: "bash".to_string(),
+                auto_restart_on_success: false,
+                success_patterns: vec![],
+            },
+            TabConfig {
+                title: "Terminal 3".to_string(),
+                command: "bash".to_string(),
+                auto_restart_on_success: false,
+                success_patterns: vec![],
+            },
+            TabConfig {
+                title: "Terminal 4".to_string(),
                 command: "bash".to_string(),
                 auto_restart_on_success: false,
                 success_patterns: vec![],
@@ -174,11 +203,16 @@ mod tests {
         assert_eq!(config.app.name, "Audio Toolkit Shell");
         assert_eq!(config.app.window_width, 1280.0);
         assert_eq!(config.app.window_height, 720.0);
-        assert_eq!(config.tabs.len(), 2);
+        assert_eq!(config.tabs.len(), 4);
         assert_eq!(config.tabs[0].title, "Terminal 1");
-        assert_eq!(config.tabs[0].command, "bash");
-        assert!(!config.tabs[0].auto_restart_on_success);
-        assert!(config.tabs[0].success_patterns.is_empty());
+        assert_eq!(config.tabs[1].title, "Terminal 2");
+        assert_eq!(config.tabs[2].title, "Terminal 3");
+        assert_eq!(config.tabs[3].title, "Terminal 4");
+        for tab in &config.tabs {
+            assert_eq!(tab.command, "bash");
+            assert!(!tab.auto_restart_on_success);
+            assert!(tab.success_patterns.is_empty());
+        }
     }
 
     #[test]
@@ -232,7 +266,7 @@ success_patterns = ["done", "complete"]
         
         // Should fall back to default config
         assert_eq!(config.app.name, "Audio Toolkit Shell");
-        assert_eq!(config.tabs.len(), 2);
+        assert_eq!(config.tabs.len(), 4);
         
         // Restore original directory
         std::env::set_current_dir(original_dir).expect("Failed to restore dir");
@@ -282,7 +316,7 @@ success_patterns = []
         
         // Should fall back to default config on parse error
         assert_eq!(config.app.name, "Audio Toolkit Shell");
-        assert_eq!(config.tabs.len(), 2);
+        assert_eq!(config.tabs.len(), 4);
         
         // Cleanup
         std::env::set_current_dir(original_dir).expect("Failed to restore dir");
