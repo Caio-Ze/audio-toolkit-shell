@@ -459,6 +459,8 @@ pub struct AudioToolkitApp {
     right_top_frac: f32,       // top row height share in right cluster
     right_hsplit_frac: f32,    // top-left vs top-right width share in right cluster
     left_buttons_frac: f32,    // fraction of left panel height devoted to buttons container
+    // Debug: overlay pane and handle rects
+    debug_overlay: bool,
 }
 
 impl AudioToolkitApp {
@@ -500,6 +502,15 @@ impl AudioToolkitApp {
         // Start buttons area around ~22% of left panel height; can be adjusted by user
         let left_buttons_frac = 0.22_f32;
 
+        // Debug overlay flag: set via env var ATS_DEBUG_OVERLAY (1/true/yes)
+        let debug_overlay = std::env::var("ATS_DEBUG_OVERLAY")
+            .ok()
+            .map(|v| {
+                let v = v.trim();
+                v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
+            })
+            .unwrap_or(false);
+
         Self {
             tabs,
             focused_terminal: 0, // Start with left terminal focused
@@ -507,6 +518,7 @@ impl AudioToolkitApp {
             right_top_frac,
             right_hsplit_frac,
             left_buttons_frac,
+            debug_overlay,
         }
     }
 
@@ -699,10 +711,35 @@ impl AudioToolkitApp {
         label: &str,
         accent: egui::Color32,
         size: egui::Vec2,
+        is_right_col: bool,
     ) -> egui::Response {
         let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+        // Base paint rect
+        let near_right_edge = (rect.max.x + 0.5) >= ui.max_rect().right();
+        let mut paint_rect = rect;
+        // Seam overlap to defeat AA between columns
+        if is_right_col {
+            paint_rect.min.x = paint_rect.min.x - 0.5;
+        } else {
+            paint_rect.max.x = paint_rect.max.x + 0.5;
+        }
+        // Do not recess the far-right edge anymore (avoid visible cutoff)
+        if near_right_edge {
+            // no-op: keep full width
+            paint_rect.max.x = paint_rect.max.x;
+        }
 
-        let rounding = egui::Rounding::same(4.0);
+        // Outer-corner rounding: zero out inner corners between columns
+        let mut rounding = egui::Rounding::same(4.0);
+        if is_right_col {
+            // Right column: no rounding on left edge (inner seam)
+            rounding.nw = 0.0;
+            rounding.sw = 0.0;
+        } else {
+            // Left column: no rounding on right edge (inner seam)
+            rounding.ne = 0.0;
+            rounding.se = 0.0;
+        }
         let visuals = ui.style().visuals.clone();
 
         // Neutral background with subtle states (more discrete)
@@ -715,13 +752,14 @@ impl AudioToolkitApp {
         };
 
         let painter = ui.painter();
-        painter.rect_filled(rect, rounding, bg);
+        painter.rect_filled(paint_rect, rounding, bg);
 
         // Left accent stripe (slimmer)
         let stripe_w = 3.0;
+        // Anchor stripe to original rect to avoid visual drift when overlapping seams
         let stripe_rect = egui::Rect::from_min_max(
-            rect.min,
-            egui::pos2((rect.min.x + stripe_w).min(rect.max.x), rect.max.y),
+            egui::pos2(rect.min.x, paint_rect.min.y),
+            egui::pos2((rect.min.x + stripe_w).min(paint_rect.max.x), paint_rect.max.y),
         );
         painter.rect_filled(
             stripe_rect,
@@ -737,16 +775,75 @@ impl AudioToolkitApp {
         // Hover ring (thinner/subtle)
         if resp.hovered() {
             painter.rect_stroke(
-                rect,
+                paint_rect,
                 rounding,
                 egui::Stroke { width: 0.5, color: accent.gamma_multiply(0.4) },
             );
         }
 
         // Label content (left-aligned, vertically centered)
+        // Anchor text to original rect min x + stripe to avoid seam overlap shifting the label
         let inner = egui::Rect::from_min_max(
-            egui::pos2(rect.min.x + stripe_w + 6.0, rect.min.y),
-            egui::pos2(rect.max.x - 6.0, rect.max.y),
+            egui::pos2(rect.min.x + stripe_w + 6.0, paint_rect.min.y),
+            egui::pos2(paint_rect.max.x - 6.0, paint_rect.max.y),
+        );
+        ui.allocate_ui_at_rect(inner, |ui| {
+            let text = egui::RichText::new(label).size(11.0);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add(egui::Label::new(text).truncate(true));
+            });
+        });
+
+        resp
+    }
+
+    /// Render only the content for an action button (stripe, label, hover ring) assuming the row background
+    /// is already painted. This avoids per-cell background seams.
+    fn render_action_button_no_bg(
+        ui: &mut egui::Ui,
+        label: &str,
+        accent: egui::Color32,
+        size: egui::Vec2,
+        is_right_col: bool,
+    ) -> egui::Response {
+        let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+        let paint_rect = rect; // no seam overlap; row provides background
+
+        // Outer-corner rounding applies only to hover ring; keep inner corners square
+        let mut rounding = egui::Rounding::same(4.0);
+        if is_right_col {
+            rounding.nw = 0.0; rounding.sw = 0.0;
+        } else {
+            rounding.ne = 0.0; rounding.se = 0.0;
+        }
+
+        let painter = ui.painter();
+
+        // Left accent stripe
+        let stripe_w = 3.0;
+        let stripe_rect = egui::Rect::from_min_max(
+            egui::pos2(rect.min.x, paint_rect.min.y),
+            egui::pos2((rect.min.x + stripe_w).min(paint_rect.max.x), paint_rect.max.y),
+        );
+        painter.rect_filled(
+            stripe_rect,
+            egui::Rounding { nw: rounding.nw, ne: 0.0, sw: rounding.sw, se: 0.0 },
+            accent,
+        );
+
+        // Hover ring (thin)
+        if resp.hovered() {
+            painter.rect_stroke(
+                paint_rect,
+                rounding,
+                egui::Stroke { width: 0.5, color: accent.gamma_multiply(0.4) },
+            );
+        }
+
+        // Label content
+        let inner = egui::Rect::from_min_max(
+            egui::pos2(rect.min.x + stripe_w + 6.0, paint_rect.min.y),
+            egui::pos2(paint_rect.max.x - 6.0, paint_rect.max.y),
         );
         ui.allocate_ui_at_rect(inner, |ui| {
             let text = egui::RichText::new(label).size(11.0);
@@ -853,9 +950,33 @@ impl AudioToolkitApp {
         );
         (left_rect, handle_rect, right_rect)
     }
+    
+    /// Compute the header band height used by terminal panels.
+    /// This must be kept consistent across `render_terminal_panel` and any
+    /// splitter geometry that needs to avoid overlapping the header.
+    fn header_band_height(ui: &egui::Ui) -> f32 {
+        let styles = &ui.style().text_styles;
+        let body = styles
+            .get(&egui::TextStyle::Body)
+            .map(|f| f.size)
+            .unwrap_or(14.0);
+        let base = styles
+            .get(&egui::TextStyle::Button)
+            .map(|f| f.size)
+            .unwrap_or(body);
+        let title_size = base * 1.3;
+        title_size + 10.0
+    }
 
     /// Renders a single terminal panel (header, output). Returns true if the header was clicked.
-    fn render_terminal_panel(ui: &mut egui::Ui, tab: &mut TerminalTab, is_focused: bool) -> bool {
+    /// `tab_index` is used to assign stable, unique widget ids (e.g., ScrollArea state).
+    fn render_terminal_panel(
+        ui: &mut egui::Ui,
+        tab: &mut TerminalTab,
+        is_focused: bool,
+        tab_index: usize,
+        debug_overlay: bool,
+    ) -> bool {
         let mut clicked = false;
         let focus_indicator = if is_focused { "🔵" } else { "⚪" };
         let title_color = if is_focused {
@@ -870,37 +991,27 @@ impl AudioToolkitApp {
             .inner_margin(egui::Margin::same(0.0))
             .outer_margin(egui::Margin::same(0.0))
             .show(ui, |ui| {
-                // Header: clickable to focus, truncated text
-                // Compute a title font size ~30% larger than the base UI text
-                let base_size = {
-                    let styles = &ui.style().text_styles;
-                    let body = styles
-                        .get(&egui::TextStyle::Body)
-                        .map(|f| f.size)
-                        .unwrap_or(14.0);
-                    styles
-                        .get(&egui::TextStyle::Button)
-                        .map(|f| f.size)
-                        .unwrap_or(body)
-                };
-                let title_size = base_size * 1.3;
+                // Header: wide clickable band (not just the label)
+                let header_h = Self::header_band_height(ui);
 
-                let header_resp = ui
-                    .horizontal(|ui| {
-                        let lbl = ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(format!(
-                                    "{} 🖥️ {}",
-                                    focus_indicator,
-                                    tab.title()
-                                ))
-                                .color(title_color)
-                                .strong()
-                                .size(title_size),
-                            )
-                            .truncate(true)
-                            .sense(egui::Sense::click()),
-                        );
+                // Allocate a full-width header rect that is clickable anywhere
+                let available_w = ui.available_width();
+                let (header_rect, header_resp) =
+                    ui.allocate_exact_size(egui::vec2(available_w, header_h), egui::Sense::click());
+                if debug_overlay {
+                    ui.painter().rect_filled(
+                        header_rect,
+                        0.0,
+                        egui::Color32::from_rgba_unmultiplied(0, 128, 255, 24),
+                    );
+                }
+                ui.allocate_ui_at_rect(header_rect, |ui| {
+                    ui.horizontal(|ui| {
+                        let title = egui::RichText::new(format!("{} 🖥️ {}", focus_indicator, tab.title()))
+                            .color(title_color)
+                            .strong()
+                            .size((header_h - 10.0).max(1.0));
+                        ui.add(egui::Label::new(title).truncate(true));
                         if !is_focused {
                             ui.add(
                                 egui::Label::new(
@@ -911,16 +1022,16 @@ impl AudioToolkitApp {
                                 .truncate(true),
                             );
                         }
-                        lbl
-                    })
-                    .inner;
+                    });
+                });
                 if header_resp.clicked() {
+                    if debug_overlay { eprintln!("[FOCUS] header clicked idx={} rect={:?}", tab_index, header_rect); }
                     clicked = true;
                 }
 
                 // Output: occupy full width; sticky to bottom; assign unique id per terminal to avoid shared scrolling
                 egui::ScrollArea::vertical()
-                    .id_source(ui.id().with(("terminal_output_scroll", tab.title())))
+                    .id_source(egui::Id::new(("terminal_output_scroll_idx", tab_index)))
                     .auto_shrink([false, false])
                     .stick_to_bottom(true)
                     .show(ui, |ui| {
@@ -930,22 +1041,15 @@ impl AudioToolkitApp {
                         Self::render_terminal_buffer(ui, &tab.terminal_emulator().buffer);
                     });
             });
-
-        // Make the panel clickable to focus but leave a thin gutter on left/right for splitters
-        let mut panel_rect = frame_inner.response.rect;
-        let click_rect = egui::Rect::from_min_max(
-            egui::pos2(panel_rect.min.x + 12.0, panel_rect.min.y),
-            egui::pos2(panel_rect.max.x - 12.0, panel_rect.max.y),
-        );
-        let click_zone = ui.interact(
-            click_rect,
-            ui.id().with(("terminal_panel_click", tab.title())),
-            egui::Sense::click(),
-        );
-        if click_zone.clicked() {
-            clicked = true;
+        // Draw a subtle focus border around the entire panel
+        if is_focused {
+            let p = ui.painter();
+            p.rect_stroke(
+                frame_inner.response.rect,
+                egui::Rounding::same(2.0),
+                egui::Stroke { width: 1.0, color: CatppuccinTheme::FRAPPE.blue },
+            );
         }
-
         clicked
     }
 
@@ -1060,10 +1164,11 @@ impl App for AudioToolkitApp {
             }
         }
 
-        // Fixed-percentage layout (Plan v2):
-        // - Left column fixed to 35% of window width; non-resizable.
-        // - Bottom row (Terminal 4) fixed to 35% of window height.
-        // - Buttons box occupies the lower 35% of the left column.
+        // Fixed layout + interactive right cluster (Plan v2):
+        // - Left column fixed to 40% of window width; non-resizable.
+        // - Buttons box occupies the lower 30% of the left column (scrolls internally).
+        // - Right cluster vertical split (top vs bottom) is interactive; defaults come from config
+        //   (`right_top_fraction`, e.g., 0.6 for ~60% top / ~40% bottom). Terminal 4 is not fixed.
         let screen_w = ctx.screen_rect().width();
         let left_w = (screen_w * 0.40).max(1.0);
         let left_panel = egui::SidePanel::left("terminal_1")
@@ -1082,10 +1187,10 @@ impl App for AudioToolkitApp {
                 // Allow the left panel content to shrink to zero width
                 ui.set_min_width(0.0);
 
-                // Fixed vertical split inside left column: 65% Terminal 1 (top), 35% Buttons (bottom)
+                // Fixed vertical split inside left column: 70% Terminal 1 (top), 30% Buttons (bottom)
                 let rect = ui.available_rect_before_wrap();
                 let total_h = rect.height().max(1.0);
-                let split_y = rect.top() + total_h * 0.65;
+                let split_y = rect.top() + total_h * 0.70;
                 let t1_rect = egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), split_y));
                 let btn_rect = egui::Rect::from_min_max(egui::pos2(rect.left(), split_y), rect.max);
 
@@ -1094,8 +1199,36 @@ impl App for AudioToolkitApp {
                 if self.tabs.len() >= 1 {
                     let tab = &mut self.tabs[0];
                     let is_focused = self.focused_terminal == 0;
-                    let clicked = Self::render_terminal_panel(&mut t1_ui, tab, is_focused);
+                    let clicked = {
+                        let mut clicked_local = false;
+                        t1_ui.push_id(("pane_scope", 0usize), |ui| {
+                            clicked_local = Self::render_terminal_panel(ui, tab, is_focused, 0, self.debug_overlay);
+                        });
+                        clicked_local
+                    };
                     if clicked {
+                        self.focused_terminal = 0;
+                    }
+
+                    // Panel-wide click-to-focus for Terminal 1 (pane minus header band)
+                    let t1_focus_rect = egui::Rect::from_min_max(
+                        egui::pos2(t1_rect.left(), t1_rect.top() + Self::header_band_height(ui)),
+                        t1_rect.max,
+                    );
+                    if self.debug_overlay {
+                        ui.painter().rect_filled(
+                            t1_focus_rect,
+                            0.0,
+                            egui::Color32::from_rgba_unmultiplied(0, 128, 255, 16),
+                        );
+                    }
+                    let t1_resp = ui.interact(
+                        t1_focus_rect,
+                        egui::Id::new(("pane_focus_zone", 0usize)),
+                        egui::Sense::click(),
+                    );
+                    if t1_resp.clicked() {
+                        if self.debug_overlay { eprintln!("[FOCUS] pane click -> T1 left (idx 0)"); }
                         self.focused_terminal = 0;
                     }
                 }
@@ -1108,141 +1241,116 @@ impl App for AudioToolkitApp {
                         .size(11.0),
                 );
                 btn_ui.add_space(4.0);
+                // Compute remaining height for the grid and derive button height to fill it exactly
+                let avail_h = btn_ui.available_height().max(1.0);
+                let rows: usize = 4; // currently 8 buttons in 2 columns -> 4 rows
+                let v_spacing = 8.0;
+                let button_height = ((avail_h - v_spacing * (rows.saturating_sub(1) as f32)) / rows as f32)
+                    .clamp(24.0, 54.0);
 
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(&mut btn_ui, |ui| {
-                        // Calculate button size - compact and width-capped
-                        let button_height = 20.0;
-                        let spacing = 4.0;
+                        // Remove default item spacing so our Grid spacing controls layout precisely
+                        {
+                            let spacing_mut = &mut ui.style_mut().spacing;
+                            spacing_mut.item_spacing.x = 0.0;
+                            spacing_mut.item_spacing.y = 0.0;
+                        }
+                        // Calculate responsive button size to fill the container width (two columns)
+                        let h_spacing = 0.0; // no gap between columns
+                        let spacing = v_spacing; // vertical spacing only
                         let total_w = ui.available_width();
-                        let max_col_w = 140.0;
-                        let tentative_col = (total_w - spacing) / 2.0;
-                        let col_w = tentative_col.min(max_col_w).max(80.0);
-                        let grid_total_w = (col_w * 2.0) + spacing;
-                        let pad = ((total_w - grid_total_w) / 2.0).max(0.0);
+                        ui.set_width(total_w);
+                        // Split width across two columns; use rounding to balance and assign exact remainder to right
+                        let col_w_left = ((total_w - h_spacing) * 0.5).round().max(1.0);
+                        let col_w_right = (total_w - h_spacing - col_w_left).max(1.0);
+                        let button_size_left = egui::vec2(col_w_left, button_height);
+                        let button_size_right = egui::vec2(col_w_right, button_height);
 
-                        // Center the grid horizontally so columns don't stretch
-                        ui.horizontal(|ui| {
-                            ui.add_space(pad);
-                            let button_size = egui::vec2(col_w, button_height);
+                        let row_prepass = std::env::var("ATS_BTN_ROW_PREPASS")
+                            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                            .unwrap_or(true);
 
+                        if row_prepass {
+                            // Paint one row-wide background per row, then render two half-width buttons without BG
+                            let rows_meta = [
+                                (("🔄 Restart All", CatppuccinTheme::FRAPPE.blue),   ("📁 File Manager", CatppuccinTheme::FRAPPE.lavender)),
+                                (("⚙️ Settings",    CatppuccinTheme::FRAPPE.sapphire),("🔧 Tools",        CatppuccinTheme::FRAPPE.peach)),
+                                (("📊 Analytics",   CatppuccinTheme::FRAPPE.green),  ("🔖 Bookmarks",   CatppuccinTheme::FRAPPE.pink)),
+                                (("📜 Scripts",     CatppuccinTheme::FRAPPE.mauve),  ("💡 Help",        CatppuccinTheme::FRAPPE.yellow)),
+                            ];
+
+                            for (i, ((l_label, l_acc), (r_label, r_acc))) in rows_meta.iter().enumerate() {
+                                // Row rect and background with outer rounding on extremes
+                                let (row_rect, _) = ui.allocate_exact_size(egui::vec2(total_w, button_height), egui::Sense::hover());
+                                let mut rounding = egui::Rounding::ZERO;
+                                if i == 0 { rounding.nw = 4.0; rounding.ne = 4.0; }
+                                if i + 1 == rows_meta.len() { rounding.sw = 4.0; rounding.se = 4.0; }
+                                ui.painter().rect_filled(row_rect, rounding, CatppuccinTheme::FRAPPE.surface0);
+
+                                // Split row into left/right rects
+                                let left_rect = egui::Rect::from_min_size(row_rect.min, egui::vec2(col_w_left, button_height));
+                                let right_min = egui::pos2(row_rect.min.x + col_w_left, row_rect.min.y);
+                                let right_rect = egui::Rect::from_min_size(right_min, egui::vec2(col_w_right, button_height));
+
+                                // Left button
+                                let mut left_clicked = false;
+                                ui.allocate_ui_at_rect(left_rect, |ui| {
+                                    if Self::render_action_button_no_bg(ui, l_label, *l_acc, button_size_left, false)
+                                        .on_hover_text(match i { 0 => "Restart all terminals", 1 => "Open settings (coming soon)", 2 => "Performance analytics (coming soon)", _ => "Script management (coming soon)" })
+                                        .clicked() {
+                                        left_clicked = true;
+                                    }
+                                });
+                                if left_clicked {
+                                    if i == 0 { for tab in &mut self.tabs { tab.needs_restart = true; } }
+                                }
+
+                                // Right button
+                                let mut right_clicked = false;
+                                ui.allocate_ui_at_rect(right_rect, |ui| {
+                                    if Self::render_action_button_no_bg(ui, r_label, *r_acc, button_size_right, true)
+                                        .on_hover_text(match i { 0 => "Open file manager (coming soon)", 1 => "Developer tools (coming soon)", 2 => "Command bookmarks (coming soon)", _ => "Help & documentation (coming soon)" })
+                                        .clicked() {
+                                        right_clicked = true;
+                                    }
+                                });
+                                if right_clicked { /* placeholders */ }
+
+                                if i + 1 < rows_meta.len() { ui.add_space(spacing); }
+                            }
+                        } else {
+                            // Legacy Grid path (per-cell backgrounds)
                             egui::Grid::new("action_buttons")
                                 .num_columns(2)
-                                .spacing([spacing, spacing])
+                                .spacing([h_spacing, spacing])
                                 .show(ui, |ui| {
-                                    // Button 1: Restart All Terminals
-                                    if Self::render_action_button(
-                                        ui,
-                                        "🔄 Restart All",
-                                        CatppuccinTheme::FRAPPE.blue,
-                                        button_size,
-                                    )
-                                    .on_hover_text("Restart all terminals")
-                                    .clicked()
-                                    {
-                                        for tab in &mut self.tabs {
-                                            tab.needs_restart = true;
-                                        }
+                                    if Self::render_action_button(ui, "🔄 Restart All", CatppuccinTheme::FRAPPE.blue, button_size_left, false)
+                                        .on_hover_text("Restart all terminals").clicked() {
+                                        for tab in &mut self.tabs { tab.needs_restart = true; }
                                     }
-
-                                    // Button 2: File Manager
-                                    if Self::render_action_button(
-                                        ui,
-                                        "📁 File Manager",
-                                        CatppuccinTheme::FRAPPE.lavender,
-                                        button_size,
-                                    )
-                                    .on_hover_text("Open file manager (coming soon)")
-                                    .clicked()
-                                    {
-                                        // Future: File management actions
+                                    if Self::render_action_button(ui, "📁 File Manager", CatppuccinTheme::FRAPPE.lavender, button_size_right, true)
+                                        .on_hover_text("Open file manager (coming soon)").clicked() {
                                     }
                                     ui.end_row();
-
-                                    // Button 3: Settings
-                                    if Self::render_action_button(
-                                        ui,
-                                        "⚙️ Settings",
-                                        CatppuccinTheme::FRAPPE.sapphire,
-                                        button_size,
-                                    )
-                                    .on_hover_text("Open settings (coming soon)")
-                                    .clicked()
-                                    {
-                                        // Future: Application settings
-                                    }
-
-                                    // Button 4: Tools
-                                    if Self::render_action_button(
-                                        ui,
-                                        "🔧 Tools",
-                                        CatppuccinTheme::FRAPPE.peach,
-                                        button_size,
-                                    )
-                                    .on_hover_text("Developer tools (coming soon)")
-                                    .clicked()
-                                    {
-                                        // Future: Development tools
-                                    }
+                                    if Self::render_action_button(ui, "⚙️ Settings", CatppuccinTheme::FRAPPE.sapphire, button_size_left, false)
+                                        .on_hover_text("Open settings (coming soon)").clicked() {}
+                                    if Self::render_action_button(ui, "🔧 Tools", CatppuccinTheme::FRAPPE.peach, button_size_right, true)
+                                        .on_hover_text("Developer tools (coming soon)").clicked() {}
                                     ui.end_row();
-
-                                    // Button 5: Analytics
-                                    if Self::render_action_button(
-                                        ui,
-                                        "📊 Analytics",
-                                        CatppuccinTheme::FRAPPE.green,
-                                        button_size,
-                                    )
-                                    .on_hover_text("Performance analytics (coming soon)")
-                                    .clicked()
-                                    {
-                                        // Future: Performance analytics
-                                    }
-
-                                    // Button 6: Bookmarks
-                                    if Self::render_action_button(
-                                        ui,
-                                        "🔖 Bookmarks",
-                                        CatppuccinTheme::FRAPPE.pink,
-                                        button_size,
-                                    )
-                                    .on_hover_text("Command bookmarks (coming soon)")
-                                    .clicked()
-                                    {
-                                        // Future: Command bookmarks
-                                    }
+                                    if Self::render_action_button(ui, "📊 Analytics", CatppuccinTheme::FRAPPE.green, button_size_left, false)
+                                        .on_hover_text("Performance analytics (coming soon)").clicked() {}
+                                    if Self::render_action_button(ui, "🔖 Bookmarks", CatppuccinTheme::FRAPPE.pink, button_size_right, true)
+                                        .on_hover_text("Command bookmarks (coming soon)").clicked() {}
                                     ui.end_row();
-
-                                    // Button 7: Scripts
-                                    if Self::render_action_button(
-                                        ui,
-                                        "📜 Scripts",
-                                        CatppuccinTheme::FRAPPE.mauve,
-                                        button_size,
-                                    )
-                                    .on_hover_text("Script management (coming soon)")
-                                    .clicked()
-                                    {
-                                        // Future: Script management
-                                    }
-
-                                    // Button 8: Help
-                                    if Self::render_action_button(
-                                        ui,
-                                        "💡 Help",
-                                        CatppuccinTheme::FRAPPE.yellow,
-                                        button_size,
-                                    )
-                                    .on_hover_text("Help & documentation (coming soon)")
-                                    .clicked()
-                                    {
-                                        // Future: Help and documentation
-                                    }
+                                    if Self::render_action_button(ui, "📜 Scripts", CatppuccinTheme::FRAPPE.mauve, button_size_left, false)
+                                        .on_hover_text("Script management (coming soon)").clicked() {}
+                                    if Self::render_action_button(ui, "💡 Help", CatppuccinTheme::FRAPPE.yellow, button_size_right, true)
+                                        .on_hover_text("Help & documentation (coming soon)").clicked() {}
                                     ui.end_row();
                                 });
-                            ui.add_space(pad);
-                        });
+                        }
                     });
             });
 
@@ -1286,20 +1394,43 @@ impl App for AudioToolkitApp {
                 if !self.right_hsplit_frac.is_finite() || self.right_hsplit_frac <= 0.0 { self.right_hsplit_frac = 0.5; }
                 let hsplit_x = top_rect.left() + total_w * self.right_hsplit_frac;
                 let h_handle_left = hsplit_x - HANDLE_THICK * 0.5;
+                // Compute header band height to avoid covering header clicks with the handle.
+                let header_h_band = Self::header_band_height(ui);
+                let h_top = (top_rect.top() + header_h_band).min(top_rect.bottom());
                 let h_handle_rect = egui::Rect::from_min_max(
-                    egui::pos2(h_handle_left, top_rect.top()),
+                    egui::pos2(h_handle_left, h_top),
                     egui::pos2(h_handle_left + HANDLE_THICK, top_rect.bottom()),
                 );
                 let left_rect = egui::Rect::from_min_max(top_rect.min, egui::pos2(h_handle_left, top_rect.bottom()));
                 let right_rect = egui::Rect::from_min_max(egui::pos2(h_handle_left + HANDLE_THICK, top_rect.top()), top_rect.max);
+                if self.debug_overlay {
+                    let p = ui.painter();
+                    p.rect_filled(left_rect, 0.0, egui::Color32::from_rgba_unmultiplied(0, 0, 255, 24));
+                    p.rect_filled(right_rect, 0.0, egui::Color32::from_rgba_unmultiplied(255, 0, 255, 24));
+                    p.rect_filled(h_handle_rect, 0.0, egui::Color32::from_rgba_unmultiplied(255, 255, 0, 48));
+                }
+
+                if self.debug_overlay {
+                    let p = ui.painter();
+                    p.rect_filled(top_rect, 0.0, egui::Color32::from_rgba_unmultiplied(0, 128, 0, 20));
+                    p.rect_filled(bottom_rect, 0.0, egui::Color32::from_rgba_unmultiplied(128, 0, 0, 20));
+                    p.rect_filled(v_handle_rect, 0.0, egui::Color32::from_rgba_unmultiplied(255, 255, 0, 48));
+                }
 
                 // Top-left terminal (tab 1 index)
                 let mut top_left_ui = ui.child_ui(left_rect, egui::Layout::top_down(egui::Align::Min));
                 if self.tabs.len() >= 2 {
                     let tab = &mut self.tabs[1];
                     let is_focused = self.focused_terminal == 1;
-                    let clicked = Self::render_terminal_panel(&mut top_left_ui, tab, is_focused);
+                    let clicked = {
+                        let mut clicked_local = false;
+                        top_left_ui.push_id(("pane_scope", 1usize), |ui| {
+                            clicked_local = Self::render_terminal_panel(ui, tab, is_focused, 1, self.debug_overlay);
+                        });
+                        clicked_local
+                    };
                     if clicked {
+                        if self.debug_overlay { eprintln!("[FOCUS] Focus -> T2 top-left (idx 1)"); }
                         self.focused_terminal = 1;
                     }
                 }
@@ -1309,8 +1440,15 @@ impl App for AudioToolkitApp {
                 if self.tabs.len() >= 3 {
                     let tab = &mut self.tabs[2];
                     let is_focused = self.focused_terminal == 2;
-                    let clicked = Self::render_terminal_panel(&mut top_right_ui, tab, is_focused);
+                    let clicked = {
+                        let mut clicked_local = false;
+                        top_right_ui.push_id(("pane_scope", 2usize), |ui| {
+                            clicked_local = Self::render_terminal_panel(ui, tab, is_focused, 2, self.debug_overlay);
+                        });
+                        clicked_local
+                    };
                     if clicked {
+                        if self.debug_overlay { eprintln!("[FOCUS] Focus -> T3 top-right (idx 2)"); }
                         self.focused_terminal = 2;
                     }
                 }
@@ -1320,8 +1458,62 @@ impl App for AudioToolkitApp {
                 if self.tabs.len() >= 4 {
                     let tab = &mut self.tabs[3];
                     let is_focused = self.focused_terminal == 3;
-                    let clicked = Self::render_terminal_panel(&mut bottom_ui, tab, is_focused);
+                    let clicked = {
+                        let mut clicked_local = false;
+                        bottom_ui.push_id(("pane_scope", 3usize), |ui| {
+                            clicked_local = Self::render_terminal_panel(ui, tab, is_focused, 3, self.debug_overlay);
+                        });
+                        clicked_local
+                    };
                     if clicked {
+                        if self.debug_overlay { eprintln!("[FOCUS] Focus -> T4 bottom (idx 3)"); }
+                        self.focused_terminal = 3;
+                    }
+                }
+
+                // Panel-wide click-to-focus zones for right cluster (registered BEFORE handle interactions)
+                if self.tabs.len() >= 2 {
+                    let left_focus_rect = egui::Rect::from_min_max(
+                        egui::pos2(left_rect.left(), left_rect.top() + Self::header_band_height(ui)),
+                        left_rect.max,
+                    );
+                    let resp = ui.interact(
+                        left_focus_rect,
+                        egui::Id::new(("pane_focus_zone", 1usize)),
+                        egui::Sense::click(),
+                    );
+                    if resp.clicked() {
+                        if self.debug_overlay { eprintln!("[FOCUS] pane click -> T2 top-left (idx 1)"); }
+                        self.focused_terminal = 1;
+                    }
+                }
+                if self.tabs.len() >= 3 {
+                    let right_focus_rect = egui::Rect::from_min_max(
+                        egui::pos2(right_rect.left(), right_rect.top() + Self::header_band_height(ui)),
+                        right_rect.max,
+                    );
+                    let resp = ui.interact(
+                        right_focus_rect,
+                        egui::Id::new(("pane_focus_zone", 2usize)),
+                        egui::Sense::click(),
+                    );
+                    if resp.clicked() {
+                        if self.debug_overlay { eprintln!("[FOCUS] pane click -> T3 top-right (idx 2)"); }
+                        self.focused_terminal = 2;
+                    }
+                }
+                if self.tabs.len() >= 4 {
+                    let bottom_focus_rect = egui::Rect::from_min_max(
+                        egui::pos2(bottom_rect.left(), bottom_rect.top() + Self::header_band_height(ui)),
+                        bottom_rect.max,
+                    );
+                    let resp = ui.interact(
+                        bottom_focus_rect,
+                        egui::Id::new(("pane_focus_zone", 3usize)),
+                        egui::Sense::click(),
+                    );
+                    if resp.clicked() {
+                        if self.debug_overlay { eprintln!("[FOCUS] pane click -> T4 bottom (idx 3)"); }
                         self.focused_terminal = 3;
                     }
                 }
@@ -1332,12 +1524,14 @@ impl App for AudioToolkitApp {
                     let dy = ui.input(|i| i.pointer.delta().y);
                     let new_f = (self.right_top_frac + dy / total_h).clamp(min_vf, max_vf);
                     self.right_top_frac = new_f;
+                    if self.debug_overlay { eprintln!("[SPLIT] Vertical drag dy={:.1} new_top_frac={:.3}", dy, self.right_top_frac); }
                 }
                 let h_resp = ui.interact(h_handle_rect, egui::Id::new("right_hsplit"), egui::Sense::drag());
                 if h_resp.dragged() {
                     let dx = ui.input(|i| i.pointer.delta().x);
                     let new_f = (self.right_hsplit_frac + dx / total_w).clamp(min_hf, max_hf);
                     self.right_hsplit_frac = new_f;
+                    if self.debug_overlay { eprintln!("[SPLIT] Horizontal drag dx={:.1} new_hsplit_frac={:.3}", dx, self.right_hsplit_frac); }
                 }
 
                 // Paint visible dividers/handles
