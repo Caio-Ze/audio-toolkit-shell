@@ -8,11 +8,17 @@ All notable changes to Audio Toolkit Shell will be documented in this file.
 - Buttons panel seam and right-edge cutoff resolved via row-background prepass.
 - Feature flag: `ATS_BTN_ROW_PREPASS` (default: true) toggles prepass; legacy per-cell background kept for fallback.
 - Added diagnostics overlay flag `ATS_DEBUG_OVERLAY` (default: false) to visualize pane/splitter/seam geometry.
+- Added window resize tracing `ATS_WINDOW_TRACE` (default: false) to log window size/scale and suggest `[app]` values in config.
 
 ### Layout Plan v2
 - Left column (Terminal 1 + Buttons) fixed to 40% of window width.
 - Buttons container fixed to 35% of total page height within the left column; Terminal 1 uses the upper 65%.
 - Right cluster retains interactive splitters between Terminals 2/3 and (2/3)/4; Terminal 4 resizable vertically.
+
+### Defaults and configuration
+- Updated default window size to `1458.0 x 713.0` and right panel split `right_top_fraction = 0.617`.
+- Refreshed first-run `DEFAULT_CONFIG_TEMPLATE` and `default_config()` in `src-tauri/src/config.rs` to match new defaults.
+- Config file is created next to the executable on first run; can be overridden with `ATS_CONFIG_DIR`.
 
 ### Focus, scrolling, and interaction fixes
 - Broadened header click band for reliable click-to-focus and keyboard routing.
@@ -21,7 +27,15 @@ All notable changes to Audio Toolkit Shell will be documented in this file.
 
 ### Documentation
 - Updated `RESIZER_AND_LAYOUT_AUDIT.md` with implementation details, validation checklist, and results (validated at 100%/125% scale).
-- Updated `README.md`, `CONFIGURATION.md`, and `TECHNICAL.md` to document flags and layout behavior.
+- Updated `README.md`, `CONFIGURATION.md`, and `TECHNICAL.md` to document flags, layout behavior, window tracing, and config location.
+- Added `SETING_DEFAULT_SIZE.md` with a step-by-step guide to capture preferred size/splits from logs and persist them.
+
+### Drag-and-drop
+- Simplified DnD: all drops (file/folder/app) route to the currently focused terminal tab.
+- Added per-tab DnD settings in TOML: `[tabs.dnd]` with `auto_cd_on_folder_drop` and `auto_run_on_folder_drop`.
+
+### Tests
+- All tests passing after config default changes; added `PartialEq` for `DndSettings` to support equality checks in tests.
 
 ### Code references
 - Implementation in `src-tauri/src/app.rs` under the buttons panel renderer and layout logic.

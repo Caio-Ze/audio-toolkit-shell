@@ -5,7 +5,13 @@
 //! 
 //! ## Configuration File Format
 //! 
-//! The application expects a `config.toml` file in the working directory with the following structure:
+//! The application uses a `config.toml` file located next to the executable (in the
+//! same directory as the binary). On first run, if the file does not exist, a
+//! ready-to-edit template will be created there automatically. You may also
+//! override the directory for development/tests by setting `ATS_CONFIG_DIR` to a
+//! folder path before launching the app.
+//!
+//! The configuration uses the following structure:
 //! 
 //! ```toml
 //! [app]
@@ -18,12 +24,20 @@
 //! command = "bash"
 //! auto_restart_on_success = false
 //! success_patterns = []
+//! [tabs.dnd]
+//! # On single folder drop, send: cd '<dir>' and press Enter
+//! auto_cd_on_folder_drop = false
+//! # If auto_cd_on_folder_drop is false, send: '<dir>' and press Enter
+//! auto_run_on_folder_drop = false
 //! 
 //! [[tabs]]
 //! title = "Terminal 2"
 //! command = "/path/to/script"
 //! auto_restart_on_success = true
 //! success_patterns = ["Success", "Completed"]
+//! [tabs.dnd]
+//! auto_cd_on_folder_drop = true
+//! auto_run_on_folder_drop = false
 //! ```
 //! 
 //! ## Fallback Behavior
@@ -33,7 +47,7 @@
 //! (one left, two right-top, one right-bottom).
 
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::{env, fs, path::PathBuf};
 
 /// Main application configuration structure
 /// 
@@ -83,6 +97,102 @@ pub struct AppSettings {
     pub right_top_hsplit_fraction: f32,
 }
 
+/// Drag-and-drop behavior settings
+///
+/// These settings control optional actions when dropping a single folder.
+/// Both keys default to false when omitted in the TOML file.
+#[derive(Debug, Deserialize, Serialize, Clone, Default, PartialEq)]
+pub struct DndSettings {
+    /// If true, dropping a single directory will insert `cd '<dir>'` and simulate Enter
+    #[serde(default)]
+    pub auto_cd_on_folder_drop: bool,
+    /// If true (and auto_cd_on_folder_drop is false), insert `'<dir>'` and simulate Enter
+    #[serde(default)]
+    pub auto_run_on_folder_drop: bool,
+}
+
+/// Resolve the path to the configuration file.
+///
+/// Order of precedence:
+/// 1. If `ATS_CONFIG_DIR` env var is set, use that directory.
+/// 2. Otherwise, use the directory containing the current executable.
+fn config_file_path() -> PathBuf {
+    if let Ok(dir_override) = env::var("ATS_CONFIG_DIR") {
+        return PathBuf::from(dir_override).join("config.toml");
+    }
+    let exe = env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
+    let dir = exe.parent().unwrap_or_else(|| std::path::Path::new("."));
+    dir.join("config.toml")
+}
+
+/// Default first-run configuration template written when no config exists.
+///
+/// The template enables only "Terminal 1" by default and includes numbered
+/// examples for Tabs 2–4, commented out. Users can uncomment exactly one
+/// additional `[[tabs]]` block (or keep Tab 1) and edit the command as needed.
+const DEFAULT_CONFIG_TEMPLATE: &str = r#"# Audio Toolkit Shell Configuration
+# First-run template
+#
+# This file lives next to the application binary. Edit it in place.
+#
+# Layout map (fixed arrangement):
+#   Terminal 1: Left column (large), buttons panel below
+#   Terminal 2: Right top-left
+#   Terminal 3: Right top-right
+#   Terminal 4: Right bottom
+#
+# Usage:
+# - By default, only Terminal 1 is active.
+# - Uncomment Terminal 2–4 sections as needed to enable more panels.
+# - Keep the order to match the on-screen layout.
+# - Each section below is clearly separated and numbered.
+
+[app]
+name = "Audio Toolkit Shell"
+window_width = 1458.0
+window_height = 713.0
+
+# ===================== Terminal 1 (Left column) =====================
+[[tabs]]
+title = "Terminal 1"
+command = "bash"                      # Change to your tool or script path
+auto_restart_on_success = false
+success_patterns = []
+[tabs.dnd]
+auto_cd_on_folder_drop = false
+auto_run_on_folder_drop = false
+
+# ===================== Terminal 2 (Right top-left) ==================
+# [[tabs]]
+# title = "Terminal 2"
+# command = "bash"
+# auto_restart_on_success = false
+# success_patterns = []
+# [tabs.dnd]
+# auto_cd_on_folder_drop = false
+# auto_run_on_folder_drop = false
+
+# ===================== Terminal 3 (Right top-right) =================
+# [[tabs]]
+# title = "Terminal 3"
+# command = "bash"
+# auto_restart_on_success = false
+# success_patterns = []
+# [tabs.dnd]
+# auto_cd_on_folder_drop = false
+# auto_run_on_folder_drop = false
+
+# ===================== Terminal 4 (Right bottom) ====================
+# [[tabs]]
+# title = "Terminal 4"
+# command = "bash"
+# auto_restart_on_success = false
+# success_patterns = []
+# [tabs.dnd]
+# auto_cd_on_folder_drop = false
+# auto_run_on_folder_drop = false
+"#;
+
 fn default_min_left_width() -> f32 {
     120.0
 }
@@ -116,26 +226,44 @@ pub struct TabConfig {
     pub command: String,
     pub auto_restart_on_success: bool,
     pub success_patterns: Vec<String>,
+    /// Per-tab drag-and-drop behavior settings
+    #[serde(default)]
+    pub dnd: DndSettings,
 }
 
 /// Loads configuration from config.toml file
 /// 
-/// Attempts to read and parse the configuration file. If the file doesn't exist
-/// or cannot be parsed, falls back to the default configuration.
+/// Attempts to read and parse `config.toml` located next to the executable. If the
+/// file doesn't exist, a first-run template is created there and then loaded.
+/// If parsing fails, the application falls back to the in-memory default configuration.
 /// 
 /// # Returns
 /// 
 /// An `AppConfig` instance either loaded from file or using defaults
 pub fn load_config() -> AppConfig {
-    let config_path = "config.toml";
-    match fs::read_to_string(config_path) {
+    let config_path = config_file_path();
+    match fs::read_to_string(&config_path) {
         Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
-            eprintln!("Error parsing config.toml: {}", e);
+            eprintln!("Error parsing {:?}: {}", config_path, e);
             default_config()
         }),
-        Err(_) => {
-            eprintln!("config.toml not found, using default configuration");
-            default_config()
+        Err(err) => {
+            // Create first-run template only if the file is missing
+            eprintln!("Config not found at {:?} ({}). Creating template...", config_path, err);
+            if let Err(write_err) = fs::write(&config_path, DEFAULT_CONFIG_TEMPLATE) {
+                eprintln!("Failed to create config at {:?}: {}", config_path, write_err);
+                return default_config();
+            }
+            match fs::read_to_string(&config_path) {
+                Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
+                    eprintln!("Error parsing freshly written config {:?}: {}", config_path, e);
+                    default_config()
+                }),
+                Err(read_err) => {
+                    eprintln!("Failed to read freshly written config {:?}: {}", config_path, read_err);
+                    default_config()
+                }
+            }
         }
     }
 }
@@ -153,12 +281,12 @@ pub fn default_config() -> AppConfig {
     AppConfig {
         app: AppSettings {
             name: "Audio Toolkit Shell".to_string(),
-            window_width: 1280.0,
-            window_height: 720.0,
+            window_width: 1458.0,
+            window_height: 713.0,
             min_left_width: 120.0,
             min_right_width: 120.0,
             allow_zero_collapse: false,
-            right_top_fraction: 0.6,
+            right_top_fraction: 0.617,
             right_top_hsplit_fraction: 0.5,
         },
         tabs: vec![
@@ -167,24 +295,28 @@ pub fn default_config() -> AppConfig {
                 command: "bash".to_string(),
                 auto_restart_on_success: false,
                 success_patterns: vec![],
+                dnd: DndSettings::default(),
             },
             TabConfig {
                 title: "Terminal 2".to_string(),
                 command: "bash".to_string(),
                 auto_restart_on_success: false,
                 success_patterns: vec![],
+                dnd: DndSettings::default(),
             },
             TabConfig {
                 title: "Terminal 3".to_string(),
                 command: "bash".to_string(),
                 auto_restart_on_success: false,
                 success_patterns: vec![],
+                dnd: DndSettings::default(),
             },
             TabConfig {
                 title: "Terminal 4".to_string(),
                 command: "bash".to_string(),
                 auto_restart_on_success: false,
                 success_patterns: vec![],
+                dnd: DndSettings::default(),
             },
         ],
     }
@@ -201,8 +333,8 @@ mod tests {
         let config = default_config();
         
         assert_eq!(config.app.name, "Audio Toolkit Shell");
-        assert_eq!(config.app.window_width, 1280.0);
-        assert_eq!(config.app.window_height, 720.0);
+        assert_eq!(config.app.window_width, 1458.0);
+        assert_eq!(config.app.window_height, 713.0);
         assert_eq!(config.tabs.len(), 4);
         assert_eq!(config.tabs[0].title, "Terminal 1");
         assert_eq!(config.tabs[1].title, "Terminal 2");
@@ -256,20 +388,20 @@ success_patterns = ["done", "complete"]
 
     #[test]
     fn test_load_config_with_missing_file() {
-        // Change to a temporary directory to avoid interfering with actual config
+        // Use a temporary directory via ATS_CONFIG_DIR so we don't touch the real binary dir
         let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
-        let original_dir = std::env::current_dir().expect("Failed to get current dir");
-        
-        std::env::set_current_dir(&temp_dir).expect("Failed to change dir");
-        
+        let original = std::env::var("ATS_CONFIG_DIR").ok();
+        std::env::set_var("ATS_CONFIG_DIR", temp_dir.path());
+
+        // No config exists yet: load_config should create a template and then load it
         let config = load_config();
-        
-        // Should fall back to default config
+
         assert_eq!(config.app.name, "Audio Toolkit Shell");
-        assert_eq!(config.tabs.len(), 4);
-        
-        // Restore original directory
-        std::env::set_current_dir(original_dir).expect("Failed to restore dir");
+        // Template enables only one tab by default (others are commented)
+        assert_eq!(config.tabs.len(), 1);
+
+        // Cleanup env var
+        if let Some(val) = original { std::env::set_var("ATS_CONFIG_DIR", val); } else { std::env::remove_var("ATS_CONFIG_DIR"); }
     }
 
     #[test]
@@ -303,23 +435,23 @@ success_patterns = []
     #[test]
     fn test_load_config_with_invalid_toml() {
         let invalid_content = "invalid toml content [[[";
-        
-        // Create a temporary directory and config file
+
+        // Create a temporary directory and config file, and point ATS_CONFIG_DIR to it
         let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
         let config_path = temp_dir.path().join("config.toml");
         fs::write(&config_path, invalid_content).expect("Failed to write config");
-        
-        let original_dir = std::env::current_dir().expect("Failed to get current dir");
-        std::env::set_current_dir(temp_dir.path()).expect("Failed to change dir");
-        
+
+        let original = std::env::var("ATS_CONFIG_DIR").ok();
+        std::env::set_var("ATS_CONFIG_DIR", temp_dir.path());
+
         let config = load_config();
-        
+
         // Should fall back to default config on parse error
         assert_eq!(config.app.name, "Audio Toolkit Shell");
         assert_eq!(config.tabs.len(), 4);
-        
-        // Cleanup
-        std::env::set_current_dir(original_dir).expect("Failed to restore dir");
+
+        // Cleanup env var
+        if let Some(val) = original { std::env::set_var("ATS_CONFIG_DIR", val); } else { std::env::remove_var("ATS_CONFIG_DIR"); }
     }
 
     #[test]
@@ -329,6 +461,7 @@ success_patterns = []
             command: "echo".to_string(),
             auto_restart_on_success: true,
             success_patterns: vec!["done".to_string()],
+            dnd: DndSettings::default(),
         };
         
         let cloned = tab.clone();
@@ -336,5 +469,6 @@ success_patterns = []
         assert_eq!(tab.command, cloned.command);
         assert_eq!(tab.auto_restart_on_success, cloned.auto_restart_on_success);
         assert_eq!(tab.success_patterns, cloned.success_patterns);
+        assert_eq!(tab.dnd, cloned.dnd);
     }
 }

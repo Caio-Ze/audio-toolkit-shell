@@ -48,19 +48,24 @@ A native Rust terminal emulator application built with `eframe` and `egui` for h
    ```
 
 3. **Configure Tabs**
-   Edit `config.toml` to configure your terminal tabs:
+   Edit `config.toml` to configure your terminal tabs. The file is created next to the executable on first run. You can override the location with `ATS_CONFIG_DIR`.
    ```toml
-   [app]
-   name = "Audio Toolkit Shell"
-   window_width = 1280
-   window_height = 720
+[app]
+name = "Audio Toolkit Shell"
+window_width = 1458.0
+window_height = 713.0
+right_top_fraction = 0.617            # vertical split: top (tabs 2/3) vs bottom (tab 4)
+right_top_hsplit_fraction = 0.500     # horizontal split: tab 2 vs tab 3
 
-   [[tabs]]
-   title = "Start Scripts"
-   command = "/path/to/your/executable"
-   auto_restart_on_success = true
-   success_patterns = ["Completed successfully", "SCRIPT MENU"]
-   ```
+[[tabs]]
+title = "Start Scripts"
+command = "/path/to/your/executable"
+auto_restart_on_success = true
+success_patterns = ["Completed successfully", "SCRIPT MENU"]
+[tabs.dnd]
+auto_cd_on_folder_drop = false
+auto_run_on_folder_drop = false
+```
 
 4. **Run the Application**
    ```bash
@@ -69,7 +74,7 @@ A native Rust terminal emulator application built with `eframe` and `egui` for h
 
 ## Usage
 1. **Launch**: Run `cargo run` to start the application
-2. **Navigate**: Click tabs to switch between terminals
+2. **Navigate**: Click a terminal area to focus it; Shift+Tab cycles focus
 3. **Interact**: Use the input field to execute commands
 4. **Workflow**: Configured tabs auto-launch executables
 5. **Automation**: Auto-detects completion patterns for workflow automation
@@ -86,15 +91,23 @@ A native Rust terminal emulator application built with `eframe` and `egui` for h
 - Eliminates mid-column seam and right-edge clipping; buttons render content on top (no per-cell BG).
 - Toggle via `ATS_BTN_ROW_PREPASS` (default: on). Legacy per-cell background path remains for fallback.
 
-## 🧪 Runtime Flags
+## 🧪 Runtime Flags / Environment Variables
 
 - `ATS_BTN_ROW_PREPASS` (default: `true`)
   - Enables row-background prepass for the buttons grid.
   - Example: `ATS_BTN_ROW_PREPASS=0 cargo run --release` (disables prepass)
 
 - `ATS_DEBUG_OVERLAY` (default: `false`)
-  - Shows debug overlay for pane bounds, splitter handles, seam guides, and focus logs.
+  - Shows debug overlay for pane bounds, splitter handles, seam guides, and focus logs. Also enables window resize logs.
   - Example: `ATS_DEBUG_OVERLAY=1 cargo run --release`
+
+- `ATS_WINDOW_TRACE` (default: `false`)
+  - Enables window resize tracing without the overlay. Logs inner size (points/pixels) and suggested `[app]` values.
+  - Example: `ATS_WINDOW_TRACE=1 cargo run --release`
+
+- `ATS_CONFIG_DIR` (optional)
+  - Overrides config directory for `config.toml`.
+  - Example: `ATS_CONFIG_DIR=/tmp/ats-config cargo run --release`
 
 ## 🔧 **Development**
 
@@ -104,7 +117,7 @@ audio-toolkit-shell/
 ├── src-tauri/
 │   ├── src/
 │   │   └── main.rs
-│   ├── config.toml
+│   ├── target/
 │   └── Cargo.toml
 └── README.md
 ```
@@ -116,8 +129,13 @@ audio-toolkit-shell/
 
 ### Building & Running
 ```bash
+# Development
 cargo build
 cargo run
+
+# Release
+cargo build --release
+ATS_DEBUG_OVERLAY=1 cargo run --release
 ```
 
 ## Contributing
@@ -171,19 +189,24 @@ cargo build --release
 ```
 
 ### 3. Configure Tabs
-Edit `src-tauri/config.toml` to configure your tabs:
+On first run, the app creates `config.toml` next to the executable (or uses `ATS_CONFIG_DIR` if set). Edit that file to configure your tabs:
 
 ```toml
 [app]
 name = "Audio Toolkit Shell"
-window_width = 1280
-window_height = 720
+window_width = 1458.0
+window_height = 713.0
+right_top_fraction = 0.617
+right_top_hsplit_fraction = 0.500
 
 [[tabs]]
 title = "Start Scripts"
 command = "/path/to/your/executable"
 auto_restart_on_success = true
 success_patterns = ["Completed successfully", "SCRIPT MENU"]
+[tabs.dnd]
+auto_cd_on_folder_drop = false
+auto_run_on_folder_drop = false
 
 [[tabs]]
 title = "Terminal 2"
@@ -211,8 +234,10 @@ Each `[[tabs]]` section in `config.toml` defines a terminal tab:
 The `[app]` section configures the application:
 
 - **`name`**: Window title
-- **`window_width`**: Initial window width
-- **`window_height`**: Initial window height
+- **`window_width`**: Initial window width (points)
+- **`window_height`**: Initial window height (points)
+- **`right_top_fraction`**: Vertical split fraction for right cluster (top vs bottom)
+- **`right_top_hsplit_fraction`**: Horizontal split for top-right (tab 2 vs 3)
 
 ## 🎮 **Usage**
 
@@ -257,6 +282,19 @@ cargo run
 - **No Mock Scripts**: All modes use real executables (no development/testing mocks)
 - **Native Only**: This is a desktop application, not a web/browser app
 - **macOS Target**: Optimized for macOS (though Rust code is cross-platform)
+
+## 🖼️ Drag-and-Drop
+
+- All drops (file/folder/app) go to the currently focused terminal tab.
+- Per-tab behavior can auto-cd and optionally auto-run on folder drops via `[tabs.dnd]`:
+  - `auto_cd_on_folder_drop` (bool)
+  - `auto_run_on_folder_drop` (bool)
+
+## 📐 Setting Default Size & Splits
+
+Use the overlay/tracing to capture your preferred window size and splits and persist them to config:
+
+- Guide: see `SETING_DEFAULT_SIZE.md`
 
 ## 📝 **Example Workflows**
 

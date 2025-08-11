@@ -44,14 +44,23 @@ The application uses TOML for configuration with the following structure:
 ```toml
 [app]
 name = "Audio Toolkit Shell"
-window_width = 1280
-window_height = 720
+window_width = 1458.0
+window_height = 713.0
+# Initial right cluster splits (interactive at runtime)
+right_top_fraction = 0.617            # vertical split: top (tabs 2/3) vs bottom (tab 4)
+right_top_hsplit_fraction = 0.500     # horizontal split: tab 2 vs tab 3
+min_left_width = 120.0
+min_right_width = 120.0
+allow_zero_collapse = false
 
 [[tabs]]
 title = "Start Scripts"
 command = "/path/to/executable"
 auto_restart_on_success = true
 success_patterns = ["Completed successfully", "SCRIPT MENU"]
+[tabs.dnd]
+auto_cd_on_folder_drop = false        # if true, drop of a folder will auto-insert cd '<dir>' and Enter
+auto_run_on_folder_drop = false       # if true, hit Enter once after the cd
 ```
 
 ### 3. PTY Integration
@@ -300,6 +309,32 @@ debug = true
   - Row-background prepass paints a single opaque background per row across the full width, eliminating mid-column seams and right-edge clipping.
   - Buttons render only content (labels, accents, hover/pressed) atop the row background; per-cell backgrounds are disabled in this mode.
   - Implementation in `src-tauri/src/app.rs` around the buttons renderer.
+
+## Drag-and-Drop Model
+
+- __Routing__
+  - All file/folder/app drops are routed to the currently focused terminal tab, regardless of where the drop lands in the UI.
+  - The focused terminal shows a subtle blue focus border; during drag-hover it glows.
+
+- __Per-tab behavior__ (`[tabs.dnd]`)
+  - `auto_cd_on_folder_drop` (bool): when dropping a single folder, inserts `cd '<dir>'` and presses Enter.
+  - `auto_run_on_folder_drop` (bool): after `cd`, simulates one extra Enter to run the new prompt.
+
+## Environment Variables
+
+- __ATS_DEBUG_OVERLAY__ (default: false)
+  - Enables debug overlay (pane bounds, splitter handles, seam guides, focus logs) and also prints window resize logs.
+  - Example: `ATS_DEBUG_OVERLAY=1 cargo run --release`
+
+- __ATS_WINDOW_TRACE__ (default: false)
+  - Enables window resize tracing without the overlay. Logs inner size in points/pixels and suggested `[app]` values.
+  - Example: `ATS_WINDOW_TRACE=1 cargo run --release`
+
+- __ATS_CONFIG_DIR__ (optional)
+  - Overrides the directory where `config.toml` is read/written. Useful for testing alternative configs.
+  - Example: `ATS_CONFIG_DIR=/tmp/ats-config cargo run --release`
+
+See `SETING_DEFAULT_SIZE.md` for a step-by-step workflow to pick and persist your preferred default window size and panel split fractions from the debug logs.
 
 ## Feature Flags
 
