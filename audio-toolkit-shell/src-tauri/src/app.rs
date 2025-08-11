@@ -461,6 +461,8 @@ pub struct AudioToolkitApp {
     left_buttons_frac: f32,    // fraction of left panel height devoted to buttons container
     // Debug: overlay pane and handle rects
     debug_overlay: bool,
+    // Feature flags
+    dnd_auto_cd_dirs: bool,
 }
 
 impl AudioToolkitApp {
@@ -511,6 +513,15 @@ impl AudioToolkitApp {
             })
             .unwrap_or(false);
 
+        // Optional: automatically cd into a directory when a single folder is dropped
+        let dnd_auto_cd_dirs = std::env::var("ATS_DND_AUTO_CD_DIRS")
+            .ok()
+            .map(|v| {
+                let v = v.trim();
+                v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
+            })
+            .unwrap_or(false);
+
         Self {
             tabs,
             focused_terminal: 0, // Start with left terminal focused
@@ -519,6 +530,7 @@ impl AudioToolkitApp {
             right_hsplit_frac,
             left_buttons_frac,
             debug_overlay,
+            dnd_auto_cd_dirs,
         }
     }
 
@@ -950,6 +962,97 @@ impl AudioToolkitApp {
         );
         (left_rect, handle_rect, right_rect)
     }
+
+    /// Shell-quote a filesystem path for POSIX shells (single-quote, escape internal quotes)
+    fn shell_quote_path(path: &std::path::Path) -> String {
+        let s = path.to_string_lossy();
+        let mut out = String::with_capacity(s.len() + 2);
+        out.push('\'');
+        for ch in s.chars() {
+            if ch == '\'' {
+                out.push_str("'\\\''");
+            } else {
+                out.push(ch);
+            }
+        }
+        out.push('\'');
+        out
+    }
+
+    /// Shell-quote an arbitrary string for POSIX shells (single-quote, escape internal quotes)
+    fn shell_quote_str(s: &str) -> String {
+        let mut out = String::with_capacity(s.len() + 2);
+        out.push('\'');
+        for ch in s.chars() {
+            if ch == '\'' {
+                out.push_str("'\\\''");
+            } else {
+                out.push(ch);
+            }
+        }
+        out.push('\'');
+        out
+    }
+
+    
+    
+    /// Single-pass drag-and-drop handler: always route to the focused terminal.
+    /// Pointer and rect hit-testing are intentionally ignored.
+    fn handle_dnd_single_pass(&mut self, ctx: &egui::Context, focus_rects: &[(usize, egui::Rect)]) {
+        // Silence unused parameter warning; rects are collected for potential future use
+        let _ = focus_rects;
+
+        let (hovering_files, dropped_files) = ctx.input(|i| {
+            (!i.raw.hovered_files.is_empty(), i.raw.dropped_files.clone())
+        });
+
+        if hovering_files {
+            // Ensure smooth hover visuals while dragging
+            ctx.request_repaint();
+        }
+
+        if dropped_files.is_empty() {
+            return;
+        }
+
+        let target = self.focused_terminal;
+        if let Some(tab) = self.tabs.get_mut(target) {
+            use std::io::Write;
+            // If exactly one directory dropped and feature flag set, emit a cd command
+            let single_dir = if dropped_files.len() == 1 {
+                if let Some(path) = dropped_files[0].path.as_ref() {
+                    std::fs::metadata(path).map(|m| m.is_dir()).unwrap_or(false)
+                } else { false }
+            } else { false };
+
+            let text_to_send = if single_dir && self.dnd_auto_cd_dirs {
+                if let Some(path) = dropped_files[0].path.as_ref() {
+                    format!("cd {} ", Self::shell_quote_path(path))
+                } else {
+                    format!("cd {} ", Self::shell_quote_str(&dropped_files[0].name))
+                }
+            } else {
+                let mut parts: Vec<String> = Vec::with_capacity(dropped_files.len());
+                for f in &dropped_files {
+                    if let Some(path) = f.path.as_ref() {
+                        parts.push(Self::shell_quote_path(path));
+                    } else {
+                        parts.push(Self::shell_quote_str(&f.name));
+                    }
+                }
+                let mut s = parts.join(" ");
+                s.push(' ');
+                s
+            };
+
+            if let Some(ref mut writer) = tab.pty_writer {
+                let _ = writer.write_all(text_to_send.as_bytes());
+            }
+
+            // Keep focus on the focused terminal (explicitly set for clarity)
+            self.focused_terminal = target;
+        }
+    }
     
     /// Compute the header band height used by terminal panels.
     /// This must be kept consistent across `render_terminal_panel` and any
@@ -1041,13 +1144,25 @@ impl AudioToolkitApp {
                         Self::render_terminal_buffer(ui, &tab.terminal_emulator().buffer);
                     });
             });
-        // Draw a subtle focus border around the entire panel
+        // Draw a more visible focus border around the entire panel.
+        // When a drag is in progress, add a soft outer glow to make the drop target obvious.
         if is_focused {
+            let rect = frame_inner.response.rect;
             let p = ui.painter();
+            // Subtle glow only while dragging files over the app
+            let hovering_dnd = ui.input(|i| !i.raw.hovered_files.is_empty());
+            if hovering_dnd {
+                p.rect_stroke(
+                    rect,
+                    egui::Rounding::same(3.0),
+                    egui::Stroke { width: 4.0, color: CatppuccinTheme::FRAPPE.blue.linear_multiply(0.35) },
+                );
+            }
+            // Crisp border for the focused panel
             p.rect_stroke(
-                frame_inner.response.rect,
-                egui::Rounding::same(2.0),
-                egui::Stroke { width: 1.0, color: CatppuccinTheme::FRAPPE.blue },
+                rect,
+                egui::Rounding::same(3.0),
+                egui::Stroke { width: 2.0, color: CatppuccinTheme::FRAPPE.blue },
             );
         }
         clicked
@@ -1164,6 +1279,9 @@ impl App for AudioToolkitApp {
             }
         }
 
+        // Collect DnD focus rects for this frame
+        let mut dnd_focus_rects: Vec<(usize, egui::Rect)> = Vec::new();
+
         // Fixed layout + interactive right cluster (Plan v2):
         // - Left column fixed to 40% of window width; non-resizable.
         // - Buttons box occupies the lower 30% of the left column (scrolls internally).
@@ -1231,6 +1349,8 @@ impl App for AudioToolkitApp {
                         if self.debug_overlay { eprintln!("[FOCUS] pane click -> T1 left (idx 0)"); }
                         self.focused_terminal = 0;
                     }
+                    // Record DnD drop rect (full panel including header) for single-pass routing
+                    dnd_focus_rects.push((0, t1_rect));
                 }
 
                 // Bottom: Buttons container with its own scroll area
@@ -1477,6 +1597,8 @@ impl App for AudioToolkitApp {
                         egui::pos2(left_rect.left(), left_rect.top() + Self::header_band_height(ui)),
                         left_rect.max,
                     );
+                    // Record DnD drop rect (full panel including header) for single-pass routing
+                    dnd_focus_rects.push((1, left_rect));
                     let resp = ui.interact(
                         left_focus_rect,
                         egui::Id::new(("pane_focus_zone", 1usize)),
@@ -1501,12 +1623,16 @@ impl App for AudioToolkitApp {
                         if self.debug_overlay { eprintln!("[FOCUS] pane click -> T3 top-right (idx 2)"); }
                         self.focused_terminal = 2;
                     }
+                    // Record DnD drop rect (full panel including header) for single-pass routing
+                    dnd_focus_rects.push((2, right_rect));
                 }
                 if self.tabs.len() >= 4 {
                     let bottom_focus_rect = egui::Rect::from_min_max(
                         egui::pos2(bottom_rect.left(), bottom_rect.top() + Self::header_band_height(ui)),
                         bottom_rect.max,
                     );
+                    // Record DnD drop rect (full panel including header) for single-pass routing
+                    dnd_focus_rects.push((3, bottom_rect));
                     let resp = ui.interact(
                         bottom_focus_rect,
                         egui::Id::new(("pane_focus_zone", 3usize)),
@@ -1562,6 +1688,9 @@ impl App for AudioToolkitApp {
             });
 
         // Elegant divider between left panel and right cluster
+        // Single-pass DnD routing based on the collected focus rects
+        self.handle_dnd_single_pass(ctx, &dnd_focus_rects);
+
         let x = left_panel.response.rect.right().round();
         let painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Foreground,

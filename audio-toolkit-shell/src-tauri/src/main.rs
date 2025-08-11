@@ -49,6 +49,7 @@ fn main() -> Result<(), eframe::Error> {
     let app_name = config.app.name.clone();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_drag_and_drop(true)
             .with_inner_size([config.app.window_width, config.app.window_height]),
         ..Default::default()
     };
