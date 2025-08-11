@@ -6,26 +6,87 @@ Audio Toolkit Shell uses a TOML configuration file (`config.toml`) to define the
 
 ## Configuration File Location
 
-The configuration file must be located at:
-```
-src-tauri/config.toml
-```
+On first run, the app creates `config.toml` next to the executable. You can override the directory with the environment variable `ATS_CONFIG_DIR`.
 
-This file defines the application behavior, window settings, and terminal tab configurations.
+- Default (release): `audio-toolkit-shell/src-tauri/target/release/config.toml`
+- Override example: `ATS_CONFIG_DIR=/tmp/ats-config cargo run --release`
 
 ## Basic Structure
 
 ```toml
 [app]
-name = "Your App Name"
-window_width = 1280
-window_height = 720
+name = "Audio Toolkit Shell"
+window_width = 1458.0              # logical points
+window_height = 713.0               # logical points
+right_top_fraction = 0.617          # vertical split: top (tabs 2/3) vs bottom (tab 4)
+right_top_hsplit_fraction = 0.500   # horizontal split: tab 2 vs tab 3
+min_left_width = 120.0
+min_right_width = 120.0
+allow_zero_collapse = false
 
 [[tabs]]
-title = "Tab Name"
+title = "Start Scripts"
 command = "/path/to/executable"
 auto_restart_on_success = true
-success_patterns = ["pattern1", "pattern2"]
+success_patterns = ["Completed successfully", "SCRIPT MENU"]
+[tabs.dnd]
+auto_cd_on_folder_drop = false
+auto_run_on_folder_drop = false
+```
+
+## App Settings (`[app]`)
+
+- **`name`**: Window title.
+- **`window_width` / `window_height`**: Initial window size in logical points (floats).
+- **`right_top_fraction`**: Right cluster vertical split (top vs bottom).
+- **`right_top_hsplit_fraction`**: Right cluster top horizontal split (tab 2 vs tab 3).
+- **`min_left_width` / `min_right_width`**: Minimum widths for left/right regions.
+- **`allow_zero_collapse`**: Whether panels may fully collapse to 0 px.
+
+## Tab Settings (`[[tabs]]`)
+
+- **`title`**: Display name.
+- **`command`**: Absolute path or shell command.
+- **`auto_restart_on_success`**: Restart the command when any success pattern matches.
+- **`success_patterns`**: List of strings that indicate success.
+
+### Per-tab Drag-and-Drop (`[tabs.dnd]`)
+
+- **`auto_cd_on_folder_drop`**: If true, dropping a single folder inserts `cd '<dir>'` and presses Enter.
+- **`auto_run_on_folder_drop`**: If true, simulates an additional Enter after the `cd`.
+
+DnD routing: all drops (file/folder/app) always target the currently focused terminal tab.
+
+## Environment Variables
+
+- **`ATS_DEBUG_OVERLAY`**: Shows overlay and enables window resize logs.
+- **`ATS_WINDOW_TRACE`**: Prints window resize logs without overlay.
+- **`ATS_CONFIG_DIR`**: Uses an alternate directory for `config.toml`.
+
+## Set Your Preferred Defaults
+
+Use runtime logs to pick window size and split fractions, then update `config.toml` or code defaults. See:
+
+- `SETING_DEFAULT_SIZE.md`
+
+## Example: Minimal Single-Tab Config
+
+```toml
+[app]
+name = "Audio Toolkit Shell"
+window_width = 1458.0
+window_height = 713.0
+right_top_fraction = 0.617
+right_top_hsplit_fraction = 0.500
+
+[[tabs]]
+title = "Terminal 1"
+command = "bash"
+auto_restart_on_success = false
+success_patterns = []
+[tabs.dnd]
+auto_cd_on_folder_drop = false
+auto_run_on_folder_drop = false
 ```
 
 ## Application Settings
@@ -303,7 +364,7 @@ success_patterns = []
 **Solutions**:
 - Restart the application completely
 - Check TOML syntax with a validator
-- Verify file is saved in correct location (`src-tauri/config.toml`)
+- Verify config path: the app reads `config.toml` next to the executable by default, or from `ATS_CONFIG_DIR` if set
 - Check for syntax errors in TOML format
 
 #### 4. Window Size Issues

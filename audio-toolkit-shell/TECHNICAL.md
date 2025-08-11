@@ -6,36 +6,16 @@ Audio Toolkit Shell is built as a native Rust application using the eframe/egui 
 
 ## Core Components
 
-### 1. Application Structure
+### 1. High-level structure
 
-```rust
-struct AudioToolkitApp {
-    active_tab: usize,
-    tabs: Vec<TerminalTab>,
-    config: AppConfig,
-}
-
-struct TerminalTab {
-    title: String,
-    config: TabConfig,
-    pty_master: Box<dyn portable_pty::MasterPty + Send>,
-    pty_writer: Option<Box<dyn std::io::Write + Send>>,
-    output_rx: Receiver<String>,
-    terminal_emulator: TerminalEmulator,
-    input: String,
-    needs_restart: bool,
-}
-
-struct TerminalEmulator {
-    buffer: Vec<Vec<TerminalCell>>,
-    cursor_row: usize,
-    cursor_col: usize,
-    rows: usize,
-    cols: usize,
-    current_color: egui::Color32,
-    bold: bool,
-}
-```
+- **UI shell**: `src-tauri/src/app.rs`
+  - Layout, splitters, focus handling, buttons panel rendering.
+  - Single-pass DnD routing to the focused terminal.
+- **Configuration**: `src-tauri/src/config.rs`
+  - TOML parsing, defaults, and first-run template creation.
+  - Per-tab settings including `[tabs.dnd]`.
+- **Terminal tabs**: PTY-backed sessions (portable-pty) with background reader threads.
+- **Terminal emulator**: Character-by-character rendering and ANSI handling.
 
 ### 2. Configuration System
 
@@ -60,8 +40,12 @@ auto_restart_on_success = true
 success_patterns = ["Completed successfully", "SCRIPT MENU"]
 [tabs.dnd]
 auto_cd_on_folder_drop = false        # if true, drop of a folder will auto-insert cd '<dir>' and Enter
-auto_run_on_folder_drop = false       # if true, hit Enter once after the cd
+auto_run_on_folder_drop = false       # if true (and auto_cd is false), insert '<dir>' and press Enter
 ```
+
+Config file location:
+- Created next to the executable on first run; override with `ATS_CONFIG_DIR`.
+- Example: `ATS_CONFIG_DIR=/tmp/ats-config cargo run --release`.
 
 ### 3. PTY Integration
 
@@ -99,6 +83,16 @@ Main Thread (GUI)
 ```
 
 ## Implementation Details
+
+### Drag-and-drop model (current)
+
+- Routing: all drops (file/folder/app) are sent to the currently focused terminal tab, regardless of drop position.
+- Per-tab behavior: folder-drop actions are controlled under `[tabs.dnd]`:
+  - `auto_cd_on_folder_drop`: `cd '<dir>'` then Enter.
+  - `auto_run_on_folder_drop`: insert `'<dir>'` then Enter (no `cd`).
+  - Precedence: `auto_cd_on_folder_drop` > `auto_run_on_folder_drop` > default (quoted path + trailing space, no Enter).
+- Visuals: focused terminal shows a crisp 2px blue border; while dragging over the app, a subtle 4px glow is added to the focused panel.
+- Tracing: enable `ATS_DND_TRACE=1` to log DnD events for debugging.
 
 ### PTY Command Execution
 
@@ -218,6 +212,19 @@ if self.config.auto_restart_on_success {
 ### Testing Strategy
 1. **Unit Tests**: Configuration parsing, ANSI stripping
 2. **Integration Tests**: PTY behavior with real executables
+
+## Environment variables
+
+- `ATS_DEBUG_OVERLAY=1`: Shows overlay (pane bounds, splitters, focus logs) and enables window resize logs.
+- `ATS_WINDOW_TRACE=1`: Window resize tracing without overlay; prints inner size (points/pixels) and suggested `[app]` defaults.
+- `ATS_CONFIG_DIR=/path`: Override directory for `config.toml`.
+- `ATS_DND_TRACE=1`: Drag-and-drop tracing logs.
+
+## Window size and split tuning
+
+- Use the overlay or `ATS_WINDOW_TRACE=1` to capture size/scale changes and suggested config values.
+- Update your `config.toml` or code defaults accordingly.
+- See `SETING_DEFAULT_SIZE.md` for the complete step-by-step guide.
 3. **Manual Testing**: Full workflows on target platform
 4. **Performance Tests**: Memory/CPU usage under load
 

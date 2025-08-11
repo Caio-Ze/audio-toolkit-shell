@@ -11,7 +11,7 @@
 - Per-tab configurable folder-drop behavior via TOML in each tab's config: `[tabs.dnd]` with `auto_cd_on_folder_drop` and `auto_run_on_folder_drop`.
 - Precedence (single directory drop): `auto_cd_on_folder_drop` > `auto_run_on_folder_drop` > default (quoted path with trailing space, no Enter).
 - Visuals: the focused terminal shows a crisp 2px blue border; while dragging files anywhere over the app, it also shows a subtle 4px blue glow.
-- Removed: legacy pointer/rect hit-testing, pointer caching, session state, and DnD debug/tracing flags.
+- Removed: legacy pointer/rect hit-testing, pointer caching, and session state. Tracing remains available via `ATS_DND_TRACE`.
 - Status: Implemented, built in release, and manually validated; working as expected.
 
 ## Simplified Implementation (How we did it)
@@ -46,7 +46,7 @@
   - `auto_cd_on_folder_drop` (bool, default: false)
   - `auto_run_on_folder_drop` (bool, default: false)
 - Legacy env var support removed: `ATS_DND_AUTO_CD_DIRS` is no longer used.
-- Deprecated/removed: `ATS_DND_TRACE`, `ATS_DND_POINTER_XHAIRS`, `ATS_DND_CACHED_MS`, `ATS_DND_CACHE_OUTSIDE`, `ATS_DND_NEAREST_FALLBACK`, `ATS_DND_HOVER_LOG_MS`.
+- Deprecated/removed: `ATS_DND_POINTER_XHAIRS`, `ATS_DND_CACHED_MS`, `ATS_DND_CACHE_OUTSIDE`, `ATS_DND_NEAREST_FALLBACK`, `ATS_DND_HOVER_LOG_MS`.
 
 <br>
 
@@ -78,7 +78,7 @@
 
 - Pointer position caching, session tracking, and nearest-rect fallbacks.
 - Per-rect handler `handle_dnd_for_rect(...)` and paint helpers `paint_dnd_hover(...)`, `paint_crosshair(...)`.
-- DnD runtime flags: `ATS_DND_TRACE`, `ATS_DND_POINTER_XHAIRS`, `ATS_DND_CACHED_MS`, `ATS_DND_CACHE_OUTSIDE`, `ATS_DND_NEAREST_FALLBACK`, `ATS_DND_HOVER_LOG_MS`.
+- DnD legacy runtime flags removed: `ATS_DND_POINTER_XHAIRS`, `ATS_DND_CACHED_MS`, `ATS_DND_CACHE_OUTSIDE`, `ATS_DND_NEAREST_FALLBACK`, `ATS_DND_HOVER_LOG_MS`. Tracing via `ATS_DND_TRACE` remains for debugging.
 
 ---
 
@@ -100,7 +100,7 @@
 
 ## Configuration
 
-- All behavior is configured per tab in TOML; there is no environment-variable control.
+- Core DnD behavior (routing always to focused tab; folder-drop actions) is configured per tab in TOML. Tracing can be enabled via the environment variable `ATS_DND_TRACE`.
 
 ---
 

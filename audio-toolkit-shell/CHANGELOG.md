@@ -30,6 +30,36 @@ All notable changes to Audio Toolkit Shell will be documented in this file.
 - Updated `README.md`, `CONFIGURATION.md`, and `TECHNICAL.md` to document flags, layout behavior, window tracing, and config location.
 - Added `SETING_DEFAULT_SIZE.md` with a step-by-step guide to capture preferred size/splits from logs and persist them.
 
+### Configuration (TOML) overview
+- Config file `config.toml` is created next to the executable on first run. Override location with `ATS_CONFIG_DIR`.
+- Key `[app]` fields now include floats and split fractions. Per-tab drag-and-drop moved under `[tabs.dnd]`.
+
+```toml
+[app]
+name = "Audio Toolkit Shell"
+window_width = 1458.0
+window_height = 713.0
+right_top_fraction = 0.617            # vertical split: top (tabs 2/3) vs bottom (tab 4)
+right_top_hsplit_fraction = 0.500     # horizontal split: tab 2 vs tab 3
+min_left_width = 120.0
+min_right_width = 120.0
+allow_zero_collapse = false
+
+[[tabs]]
+title = "Terminal 1"
+command = "bash"
+auto_restart_on_success = false
+success_patterns = []
+[tabs.dnd]
+auto_cd_on_folder_drop = false
+auto_run_on_folder_drop = false
+```
+
+Environment variables:
+- `ATS_DEBUG_OVERLAY=1` shows overlay and enables window resize logs.
+- `ATS_WINDOW_TRACE=1` prints window resize logs without overlay.
+- `ATS_CONFIG_DIR=/path` uses alternate config directory.
+
 ### Drag-and-drop
 - Simplified DnD: all drops (file/folder/app) route to the currently focused terminal tab.
 - Added per-tab DnD settings in TOML: `[tabs.dnd]` with `auto_cd_on_folder_drop` and `auto_run_on_folder_drop`.
