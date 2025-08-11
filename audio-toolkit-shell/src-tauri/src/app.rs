@@ -29,7 +29,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 use std::thread;
 
-use crate::config::{AppConfig, AppSettings, TabConfig};
+use crate::config::{AppConfig, AppSettings, TabConfig, DndSettings};
 use crate::terminal::{TerminalCell, TerminalEmulator};
 use crate::theme::CatppuccinTheme;
 
@@ -461,8 +461,11 @@ pub struct AudioToolkitApp {
     left_buttons_frac: f32,    // fraction of left panel height devoted to buttons container
     // Debug: overlay pane and handle rects
     debug_overlay: bool,
-    // Feature flags
-    dnd_auto_cd_dirs: bool,
+    // Debug: window resize tracing
+    window_trace: bool,
+    last_win_w: f32,
+    last_win_h: f32,
+    last_ppp: f32,
 }
 
 impl AudioToolkitApp {
@@ -491,6 +494,7 @@ impl AudioToolkitApp {
                 command: "bash".to_string(),
                 auto_restart_on_success: false,
                 success_patterns: vec![],
+                dnd: DndSettings::default(),
             };
             tabs.push(TerminalTab::new(cfg));
         }
@@ -512,9 +516,8 @@ impl AudioToolkitApp {
                 v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
             })
             .unwrap_or(false);
-
-        // Optional: automatically cd into a directory when a single folder is dropped
-        let dnd_auto_cd_dirs = std::env::var("ATS_DND_AUTO_CD_DIRS")
+        // Window resize trace flag: set via env var ATS_WINDOW_TRACE (1/true/yes)
+        let window_trace = std::env::var("ATS_WINDOW_TRACE")
             .ok()
             .map(|v| {
                 let v = v.trim();
@@ -530,7 +533,10 @@ impl AudioToolkitApp {
             right_hsplit_frac,
             left_buttons_frac,
             debug_overlay,
-            dnd_auto_cd_dirs,
+            window_trace,
+            last_win_w: 0.0,
+            last_win_h: 0.0,
+            last_ppp: 0.0,
         }
     }
 
@@ -1018,20 +1024,51 @@ impl AudioToolkitApp {
         let target = self.focused_terminal;
         if let Some(tab) = self.tabs.get_mut(target) {
             use std::io::Write;
-            // If exactly one directory dropped and feature flag set, emit a cd command
+            // If exactly one directory dropped, we may apply special behavior
             let single_dir = if dropped_files.len() == 1 {
                 if let Some(path) = dropped_files[0].path.as_ref() {
                     std::fs::metadata(path).map(|m| m.is_dir()).unwrap_or(false)
-                } else { false }
-            } else { false };
-
-            let text_to_send = if single_dir && self.dnd_auto_cd_dirs {
-                if let Some(path) = dropped_files[0].path.as_ref() {
-                    format!("cd {} ", Self::shell_quote_path(path))
                 } else {
-                    format!("cd {} ", Self::shell_quote_str(&dropped_files[0].name))
+                    false
                 }
             } else {
+                false
+            };
+
+            // Build the text to send and whether to press Enter after
+            let mut send_enter = false;
+            let text_to_send = if single_dir {
+                // Per-tab precedence: auto-cd -> auto-run -> default (no Enter)
+                let cd_flag = tab.config.dnd.auto_cd_on_folder_drop;
+                let run_flag = tab.config.dnd.auto_run_on_folder_drop;
+                if cd_flag {
+                    send_enter = true;
+                    if let Some(path) = dropped_files[0].path.as_ref() {
+                        format!("cd {}", Self::shell_quote_path(path))
+                    } else {
+                        format!("cd {}", Self::shell_quote_str(&dropped_files[0].name))
+                    }
+                } else if run_flag {
+                    send_enter = true;
+                    if let Some(path) = dropped_files[0].path.as_ref() {
+                        Self::shell_quote_path(path)
+                    } else {
+                        Self::shell_quote_str(&dropped_files[0].name)
+                    }
+                } else {
+                    // Default: insert quoted item with trailing space (no Enter)
+                    if let Some(path) = dropped_files[0].path.as_ref() {
+                        let mut s = Self::shell_quote_path(path);
+                        s.push(' ');
+                        s
+                    } else {
+                        let mut s = Self::shell_quote_str(&dropped_files[0].name);
+                        s.push(' ');
+                        s
+                    }
+                }
+            } else {
+                // Multi-item or non-directory: join quoted items with spaces and add a trailing space
                 let mut parts: Vec<String> = Vec::with_capacity(dropped_files.len());
                 for f in &dropped_files {
                     if let Some(path) = f.path.as_ref() {
@@ -1047,6 +1084,9 @@ impl AudioToolkitApp {
 
             if let Some(ref mut writer) = tab.pty_writer {
                 let _ = writer.write_all(text_to_send.as_bytes());
+                if send_enter {
+                    let _ = writer.write_all(b"\n");
+                }
             }
 
             // Keep focus on the focused terminal (explicitly set for clarity)
@@ -1263,6 +1303,32 @@ impl App for AudioToolkitApp {
         
         // Keep repainting to poll PTY data and handle input
         ctx.request_repaint();
+
+        // Trace window size changes for easier config tuning
+        if self.debug_overlay || self.window_trace {
+            let rect = ctx.screen_rect();
+            let cur_w = rect.width();
+            let cur_h = rect.height();
+            let ppp = ctx.pixels_per_point();
+            let changed = (cur_w - self.last_win_w).abs() > 0.5
+                || (cur_h - self.last_win_h).abs() > 0.5
+                || (ppp - self.last_ppp).abs() > 0.01;
+            if changed {
+                let px_w = (cur_w * ppp).round() as i32;
+                let px_h = (cur_h * ppp).round() as i32;
+                eprintln!(
+                    "[WINDOW] resized: inner_size_pts={:.1}x{:.1} ppp={:.2} inner_size_px={}x{}",
+                    cur_w, cur_h, ppp, px_w, px_h
+                );
+                eprintln!(
+                    "[CONFIG] app.window_width = {:.1}, app.window_height = {:.1}",
+                    cur_w, cur_h
+                );
+                self.last_win_w = cur_w;
+                self.last_win_h = cur_h;
+                self.last_ppp = ppp;
+            }
+        }
 
         // Global keyboard shortcut: cycle focus across terminals (Shift+Tab)
         if ctx.input(|i| i.modifiers.shift && i.key_pressed(egui::Key::Tab)) {
