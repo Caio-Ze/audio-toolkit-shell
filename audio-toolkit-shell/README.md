@@ -74,7 +74,30 @@ A native Rust terminal emulator application built with `eframe` and `egui` for h
 4. **Workflow**: Configured tabs auto-launch executables
 5. **Automation**: Auto-detects completion patterns for workflow automation
 
-## Development
+## 🧭 Layout Overview (Plan v2)
+
+- Left column (Terminal 1 + Buttons) fixed to 40% of window width.
+- Buttons container uses the lower 35% of the left column height; Terminal 1 uses the upper 65%.
+- Right cluster (Terminals 2/3/4) retains interactive splitters: vertical split between top (2/3) and bottom (4), and a horizontal split between 2 and 3. Defaults come from `[app]` config (`right_top_fraction`, `right_top_hsplit_fraction`).
+
+## 🎛️ Buttons Panel Rendering
+
+- Row-background prepass renders a single opaque background per row across full width.
+- Eliminates mid-column seam and right-edge clipping; buttons render content on top (no per-cell BG).
+- Toggle via `ATS_BTN_ROW_PREPASS` (default: on). Legacy per-cell background path remains for fallback.
+
+## 🧪 Runtime Flags
+
+- `ATS_BTN_ROW_PREPASS` (default: `true`)
+  - Enables row-background prepass for the buttons grid.
+  - Example: `ATS_BTN_ROW_PREPASS=0 cargo run --release` (disables prepass)
+
+- `ATS_DEBUG_OVERLAY` (default: `false`)
+  - Shows debug overlay for pane bounds, splitter handles, seam guides, and focus logs.
+  - Example: `ATS_DEBUG_OVERLAY=1 cargo run --release`
+
+## 🔧 **Development**
+
 ### Project Structure
 ```
 audio-toolkit-shell/

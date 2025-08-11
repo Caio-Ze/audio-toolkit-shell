@@ -2,6 +2,30 @@
 
 All notable changes to Audio Toolkit Shell will be documented in this file.
 
+## [2.1.0] - 2025-08-10
+
+### UI layout and rendering improvements
+- Buttons panel seam and right-edge cutoff resolved via row-background prepass.
+- Feature flag: `ATS_BTN_ROW_PREPASS` (default: true) toggles prepass; legacy per-cell background kept for fallback.
+- Added diagnostics overlay flag `ATS_DEBUG_OVERLAY` (default: false) to visualize pane/splitter/seam geometry.
+
+### Layout Plan v2
+- Left column (Terminal 1 + Buttons) fixed to 40% of window width.
+- Buttons container fixed to 35% of total page height within the left column; Terminal 1 uses the upper 65%.
+- Right cluster retains interactive splitters between Terminals 2/3 and (2/3)/4; Terminal 4 resizable vertically.
+
+### Focus, scrolling, and interaction fixes
+- Broadened header click band for reliable click-to-focus and keyboard routing.
+- Splitter handle rects moved below header band to avoid event overlap.
+- Independent scrolling per terminal via stable, index-based ScrollArea ids.
+
+### Documentation
+- Updated `RESIZER_AND_LAYOUT_AUDIT.md` with implementation details, validation checklist, and results (validated at 100%/125% scale).
+- Updated `README.md`, `CONFIGURATION.md`, and `TECHNICAL.md` to document flags and layout behavior.
+
+### Code references
+- Implementation in `src-tauri/src/app.rs` under the buttons panel renderer and layout logic.
+
 ## [2.0.0] - 2025-01-04
 
 ### 🎉 **MAJOR RELEASE: Native Rust Terminal Application**
@@ -78,3 +102,6 @@ success_patterns = ["Completed successfully"]
 ## Support
 
 For issues, questions, or contributions related to any version, please refer to the project repository and documentation.
+
+
+

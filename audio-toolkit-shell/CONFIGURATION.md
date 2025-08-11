@@ -37,6 +37,11 @@ success_patterns = ["pattern1", "pattern2"]
 | `name` | String | Window title displayed in title bar | "Audio Toolkit Shell" |
 | `window_width` | Number | Initial window width in pixels | 1280 |
 | `window_height` | Number | Initial window height in pixels | 720 |
+| `min_left_width` | Number | Minimum width for the left column (px) | 120.0 |
+| `min_right_width` | Number | Minimum width for the right cluster (px) | 120.0 |
+| `allow_zero_collapse` | Boolean | Allow panels to collapse to zero width | false |
+| `right_top_fraction` | Number | Fraction of right cluster height for the top row (0.2–0.8) | 0.6 |
+| `right_top_hsplit_fraction` | Number | Fraction of top row width for Terminal 2 (0.2–0.8) | 0.5 |
 
 **Example:**
 ```toml
@@ -124,6 +129,34 @@ success_patterns = [
 - Patterns are checked against cleaned output (ANSI codes removed)
 - First matching pattern triggers restart
 - Empty array `[]` disables pattern detection
+
+## UI Layout Settings (Optional)
+
+- **Layout plan (v2):**
+  - Left column (Terminal 1 + Buttons) fixed at 40% of window width.
+  - Buttons container fixed at 35% of the left column height; Terminal 1 uses the upper 65%.
+  - Right cluster (Terminals 2/3/4) uses interactive splitters with defaults from `[app]`:
+    - `right_top_fraction` (top vs bottom in right cluster)
+    - `right_top_hsplit_fraction` (Terminal 2 vs 3 in the top row)
+
+These fields are optional in `config.toml`; defaults are applied if omitted.
+
+## Runtime Flags
+
+- **ATS_BTN_ROW_PREPASS** (default: `true`)
+  - Enables the row-background prepass for the buttons grid to eliminate seams/cutoff.
+  - Set to `0`/`false` to use legacy per-cell backgrounds.
+  - Example:
+    ```bash
+    ATS_BTN_ROW_PREPASS=0 cargo run --release
+    ```
+
+- **ATS_DEBUG_OVERLAY** (default: `false`)
+  - Shows debug overlay for pane bounds, splitters, and focus logs.
+  - Example:
+    ```bash
+    ATS_DEBUG_OVERLAY=1 cargo run --release
+    ```
 
 ## Example Configurations
 

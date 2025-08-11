@@ -289,4 +289,26 @@ opt-level = 0
 debug = true
 ```
 
+## UI Layout & Buttons Rendering
+
+- __Layout (Plan v2)__
+  - Left column (Terminal 1 + Buttons) is fixed at 40% of window width.
+  - Buttons container occupies the lower 35% of the left column height; Terminal 1 uses the upper 65%.
+  - Right cluster (Terminals 2/3/4) uses interactive splitters: vertical split between top (2/3) and bottom (4), and a horizontal split between 2 and 3. Defaults sourced from `[app]` config: `right_top_fraction` and `right_top_hsplit_fraction`.
+
+- __Buttons panel rendering__
+  - Row-background prepass paints a single opaque background per row across the full width, eliminating mid-column seams and right-edge clipping.
+  - Buttons render only content (labels, accents, hover/pressed) atop the row background; per-cell backgrounds are disabled in this mode.
+  - Implementation in `src-tauri/src/app.rs` around the buttons renderer.
+
+## Feature Flags
+
+- __ATS_BTN_ROW_PREPASS__ (default: true)
+  - Enables the row-background prepass for the buttons grid. Set to `0`/`false` to fall back to legacy per-cell backgrounds.
+  - Example: `ATS_BTN_ROW_PREPASS=0 cargo run --release`
+
+- __ATS_DEBUG_OVERLAY__ (default: false)
+  - Enables debug overlay (pane bounds, splitter handles, seam guides, focus logs).
+  - Example: `ATS_DEBUG_OVERLAY=1 cargo run --release`
+
 This technical documentation provides the foundation for understanding, maintaining, and extending the Audio Toolkit Shell application.
